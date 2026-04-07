@@ -116,6 +116,11 @@ final class WooCommerceAdapter implements AdapterInterface {
 			return;
 		}
 
+		// Skip subscription orders — handled by WooSubscriptions adapter.
+		if ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order ) ) {
+			return;
+		}
+
 		$user_id = $order->get_customer_id();
 		if ( ! $user_id ) {
 			return;

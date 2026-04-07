@@ -62,8 +62,8 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 		$this->slug   = $slug;
 		$this->prefix = $this->resolve_prefix( $slug );
 
-		add_action( 'woocommerce_subscription_renewal_payment_complete', array( $this, 'on_renewal_payment' ), 10, 2 );
-		add_action( 'woocommerce_subscription_payment_complete', array( $this, 'on_initial_payment' ) );
+		add_action( 'woocommerce_subscription_renewal_payment_complete', array( $this, 'on_renewal_payment' ), 9, 2 );
+		add_action( 'woocommerce_subscription_payment_complete', array( $this, 'on_initial_payment' ), 9 );
 	}
 
 	/**
@@ -142,7 +142,7 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 		$order_id = $order->get_id();
 
 		// Prevent double-processing.
-		if ( $order->get_meta( '_wbcom_credits_processed' ) ) {
+		if ( $order->get_meta( '_wbcom_sub_credits_processed' ) ) {
 			return;
 		}
 
@@ -175,7 +175,7 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
 		}
 
-		$order->update_meta_data( '_wbcom_credits_processed', '1' );
+		$order->update_meta_data( '_wbcom_sub_credits_processed', '1' );
 		$order->save();
 	}
 
