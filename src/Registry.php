@@ -133,7 +133,12 @@ final class Registry {
 
 			// Initialize adapter registry for this plugin.
 			$adapter_registry = new Adapters\AdapterRegistry( $slug, $config['prefix'] );
-			add_action( 'plugins_loaded', array( $adapter_registry, 'boot' ), 20 );
+			if ( did_action( 'plugins_loaded' ) ) {
+				// plugins_loaded already fired — boot adapters immediately.
+				$adapter_registry->boot();
+			} else {
+				add_action( 'plugins_loaded', array( $adapter_registry, 'boot' ), 20 );
+			}
 
 			// Register REST API endpoints.
 			add_action( 'rest_api_init', static function () use ( $slug, $config ): void {

@@ -62,7 +62,8 @@ final class WooCommerceAdapter implements AdapterInterface {
 		$this->slug   = $slug;
 		$this->prefix = $this->resolve_prefix( $slug );
 
-		add_action( 'woocommerce_order_status_completed', array( $this, 'on_order_completed' ) );
+		add_action( 'woocommerce_order_status_completed', array( $this, 'on_order_completed' ), 9 );
+		add_action( 'woocommerce_order_status_processing', array( $this, 'on_order_completed' ), 9 );
 	}
 
 	/**
@@ -103,7 +104,8 @@ final class WooCommerceAdapter implements AdapterInterface {
 	 * @param int $order_id WooCommerce order ID.
 	 * @return void
 	 */
-	public function on_order_completed( int $order_id ): void {
+	public function on_order_completed( $order_id ): void {
+		$order_id = (int) $order_id;
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) {
 			return;
