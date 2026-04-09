@@ -129,7 +129,7 @@ final class REST {
 					'amount'  => array(
 						'type'              => 'integer',
 						'required'          => true,
-						'sanitize_callback' => 'intval',
+						'sanitize_callback' => 'absint',
 					),
 					'note'    => array(
 						'type'              => 'string',
