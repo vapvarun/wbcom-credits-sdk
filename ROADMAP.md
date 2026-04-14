@@ -13,7 +13,94 @@
 
 ---
 
-## v1.1 (Future) — Direct Gateway Support
+## v1.1 (Future) — Reusable Templates + Direct Gateway Support
+
+### Part A: Reusable Admin + Frontend Templates (HIGH PRIORITY)
+
+**Problem:** Every consuming plugin currently rebuilds the same admin Credits tab, Transactions page, and dashboard Credits tab from scratch. When the SDK adds a new feature (Stripe gateway, subscription renewal display), every plugin has to update independently — they diverge, drift, and bugs multiply.
+
+**Solution:** Ship reusable templates inside the SDK that consuming plugins include with a single function call.
+
+#### Directory structure
+
+```
+wbcom-credits-sdk/
+├── templates/
+│   ├── admin/
+│   │   ├── credits-tab.php                  — Full Settings > Credits tab
+│   │   ├── credits-tab-sections/
+│   │   │   ├── credit-costs.php             — Cost fields per consumer
+│   │   │   ├── usage-limits.php             — Per-role limits + period + behavior
+│   │   │   ├── sdk-config.php               — Webhook URL, secret, threshold
+│   │   │   ├── mappings-table.php           — Active mappings table
+│   │   │   ├── mappings-add-form.php        — Add Mapping form w/ optgroups
+│   │   │   ├── detected-providers.php       — Adapter status list
+│   │   │   ├── stripe-gateway.php           — (v1.1) Stripe settings
+│   │   │   └── paypal-gateway.php           — (v1.1) PayPal settings
+│   │   └── transactions-page.php            — Full ledger page w/ filters + CSV
+│   └── frontend/
+│       ├── dashboard-credits-tab.php        — User dashboard Credits tab
+│       ├── dashboard-sections/
+│       │   ├── balance-card.php
+│       │   ├── credit-packs.php
+│       │   └── transactions-list.php
+│       ├── balance-widget.php               — Compact sidebar widget
+│       ├── submission-cost-banner.php       — Pre-submit cost preview
+│       └── insufficient-credits.php         — 402 error display
+```
+
+#### Loader API
+
+```php
+namespace Wbcom\Credits;
+
+class Template {
+    public static function get( string $name, array $args = array(), string $plugin_slug = '' ): void;
+    public static function locate( string $name, string $plugin_slug = '' ): string;
+}
+```
+
+Precedence for template lookups:
+1. `{theme}/wbcom-credits/{plugin_slug}/{name}.php` — plugin-specific override
+2. `{theme}/wbcom-credits/{name}.php` — global override for all SDK-using plugins
+3. `{sdk}/templates/{name}.php` — SDK default
+
+#### CSS token system
+
+Templates use CSS custom properties, not hardcoded classes:
+```css
+.wbcom-credits-balance-card {
+    background: var(--wbcom-credits-accent, #2271b1);
+    color: var(--wbcom-credits-accent-fg, #fff);
+    border-radius: var(--wbcom-credits-radius, 8px);
+}
+```
+
+Consuming plugins set tokens to match their brand colors. Same template, different look per plugin.
+
+#### Consuming plugin integration (10-line admin tab instead of 600)
+
+```php
+add_action( '{prefix}_settings_tab_content', function ( $tab ) {
+    if ( 'credits' !== $tab ) return;
+    \Wbcom\Credits\Template::get( 'admin/credits-tab', array(
+        'slug'      => 'my-plugin',
+        'prefix'    => 'mp',
+        'consumers' => \Wbcom\Credits\Registry::instance()->get( 'my-plugin' )['consumers'],
+    ), 'my-plugin' );
+} );
+```
+
+#### Benefits
+
+- SDK updates (new gateway, new adapter, new section) auto-propagate to all consuming plugins
+- Zero UI code per plugin — consuming plugins only provide data
+- Cross-plugin UI consistency guaranteed
+- Theme developers can customize once, override applies to all SDK-using plugins
+- New plugin adoption time drops from 2 days to 30 minutes
+- Bug fixed in one template = fixed in all plugins
+
+### Part B: Direct Gateway Support
 
 Add native Stripe + PayPal gateways so sites without WooCommerce/PMPro/etc. can still sell credits.
 
