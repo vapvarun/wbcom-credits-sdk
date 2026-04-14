@@ -23,6 +23,7 @@ if ( ! defined( 'WBCOM_CREDITS_SDK_AUTOLOADER_LOADED' ) ) {
 		require_once __DIR__ . '/src/Credits.php';
 		require_once __DIR__ . '/src/Consumer.php';
 		require_once __DIR__ . '/src/REST.php';
+		require_once __DIR__ . '/src/Template.php';
 		require_once __DIR__ . '/src/Adapters/AdapterInterface.php';
 		require_once __DIR__ . '/src/Adapters/AdapterRegistry.php';
 		require_once __DIR__ . '/src/Adapters/WooCommerce.php';
