@@ -7,7 +7,7 @@
  * Any Wbcom plugin bundles this SDK and registers via the hook below.
  *
  * @package Wbcom\Credits
- * @version 1.0.0
+ * @version 1.1.0
  * @license GPL-2.0+
  */
 
@@ -36,30 +36,30 @@ if ( ! defined( 'WBCOM_CREDITS_SDK_AUTOLOADER_LOADED' ) ) {
 }
 
 // Only set up hooks if WordPress is available and this version hasn't registered.
-if ( ! function_exists( 'wbcom_credits_sdk_register_1_0_0' ) && function_exists( 'add_action' ) ) {
+if ( ! function_exists( 'wbcom_credits_sdk_register_1_1_0' ) && function_exists( 'add_action' ) ) {
 
 	add_action( 'after_setup_theme', array( '\\Wbcom\\Credits\\Versions', 'initialize_latest_version' ), 1, 0 );
-	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_0_0', 0, 0 );
+	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_1_0', 0, 0 );
 
 	/**
 	 * Register this version of the SDK.
 	 *
-	 * @since 1.0.0
+	 * @since 1.1.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_register_1_0_0(): void {
+	function wbcom_credits_sdk_register_1_1_0(): void {
 		$versions = \Wbcom\Credits\Versions::instance();
-		$versions->register( '1.0.0', 'wbcom_credits_sdk_initialize_1_0_0' );
+		$versions->register( '1.1.0', 'wbcom_credits_sdk_initialize_1_1_0' );
 	}
 
 	/**
 	 * Initialize this version of the SDK.
 	 *
-	 * @since 1.0.0
+	 * @since 1.1.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_initialize_1_0_0(): void {
-		define( 'WBCOM_CREDITS_SDK_VERSION', '1.0.0' );
+	function wbcom_credits_sdk_initialize_1_1_0(): void {
+		define( 'WBCOM_CREDITS_SDK_VERSION', '1.1.0' );
 		define( 'WBCOM_CREDITS_SDK_PATH', __DIR__ );
 
 		// Fire the registry hook — consuming plugins register here.
@@ -71,7 +71,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_0_0' ) && function_exists(
 
 	// Fallback: initialize if after_setup_theme already fired (late include).
 	if ( did_action( 'after_setup_theme' ) && ! doing_action( 'after_setup_theme' ) && ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-		wbcom_credits_sdk_register_1_0_0();
+		wbcom_credits_sdk_register_1_1_0();
 		\Wbcom\Credits\Versions::initialize_latest_version();
 	}
 }
