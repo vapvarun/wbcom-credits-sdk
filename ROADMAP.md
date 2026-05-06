@@ -1,6 +1,42 @@
 # Wbcom Credits SDK — Roadmap
 
-## v1.0 (Current) — Launch Ready
+## v1.2.0 (Current) — Direct Payment Gateways
+
+**Shipped:**
+- `Abstract_Gateway` base — every new gateway is ~150 lines of provider-specific code; idempotency, amount/currency cross-check, top-up, refund accounting, `Transaction_Log` writes are inherited.
+- `Stripe` gateway — Stripe Checkout, signature verify (inline HMAC), full + partial refunds.
+- `PayPal` gateway — PayPal Orders v2, verify-API signature check, full + partial refunds.
+- `Transaction_Log` table — per-gateway audit trail with parent/refund linkage.
+- `Idempotency` (FIFO ring) + `Pending_Checkouts` (TTL-pruned amount cross-check) + `Signature_Verifier` (Stripe HMAC + PayPal verify-API).
+- `Webhook_Controller` REST routes: `/{slug}/checkout/{gw}`, `/{slug}/webhook/{gw}`, `/{slug}/refund/{gw}`.
+- 23 unit tests covering idempotency, signature verification, and pending-checkout pruning.
+
+**Action hooks for consuming plugins:**
+- `wbcom_credits_gateway_topup` — fires after a successful direct-pay top-up.
+- `wbcom_credits_gateway_refund` — fires after credits have been revoked from a refund.
+- `wbcom_credits_register_gateways` — third-party gateways register here.
+
+**Out of scope (deferred to v1.3):**
+- Subscriptions (Stripe Subscriptions, PayPal Billing Subscriptions).
+- One-click "Connect" onboarding (Stripe Connect / PayPal Partner Referrals) — see v1.3 below.
+
+---
+
+## v1.3 (Next) — One-Click Connect Onboarding
+
+**Goal:** site owner clicks "Connect Stripe" or "Connect PayPal", does the OAuth dance once, and the SDK takes care of everything else. No copying API keys. No webhook URL hand-configuration. Works on the same Wbcom Connect platform across every plugin that bundles the SDK.
+
+**Components:**
+- **Wbcom Connect platform** — single hosted endpoint at `connect.wbcomdesigns.com` that brokers OAuth for every consuming plugin. Redirects back to the site with a code; site exchanges via SDK.
+- **Stripe Connect** — Standard accounts. SDK ships the platform `client_id`, the site never registers anything with Stripe directly.
+- **PayPal Partner Referrals** — equivalent flow.
+- **Webhook auto-registration** — once connected, the SDK calls the provider API to create the webhook endpoint with the right URL pointing back at the site, so admins never paste signing secrets.
+
+**Estimated effort:** 5 days SDK + 2 days platform infra.
+
+---
+
+## v1.0 — Launch Ready
 
 **Payment via existing commerce/membership plugins:**
 - WooCommerce (one-time products)
@@ -13,7 +49,9 @@
 
 ---
 
-## v1.1 (Future) — Reusable Templates + Direct Gateway Support
+## v1.1 (Past) — Reusable Templates + Direct Gateway Support
+
+> **Status:** Part A (templates) shipped in 1.1.0. Part B (Stripe + PayPal direct gateways) shipped in 1.2.0 — see top of this file.
 
 ### Part A: Reusable Admin + Frontend Templates (HIGH PRIORITY)
 

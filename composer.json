@@ -1,0 +1,25 @@
+{
+    "name": "wbcom/credits-sdk",
+    "description": "Reusable credit-engine SDK for Wbcom WordPress plugins. Append-only ledger, payment-source adapters (WooCommerce, PMPro, MemberPress), and direct payment gateways (Stripe, PayPal) with refund support.",
+    "type": "library",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Wbcom\\Credits\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Wbcom\\Credits\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}
