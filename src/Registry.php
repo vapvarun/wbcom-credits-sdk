@@ -125,6 +125,9 @@ final class Registry {
 			// Create the ledger table if needed.
 			Ledger::maybe_create_table( $config['prefix'] );
 
+			// Create the gateway transaction-log table for direct payments.
+			Gateways\Transaction_Log::maybe_create_table( $config['prefix'] );
+
 			// Wire consumer hooks (hold/deduct/refund lifecycle).
 			foreach ( $config['consumers'] as $consumer_config ) {
 				$consumer = new Consumer( $slug, $config['prefix'], $consumer_config );
@@ -140,10 +143,18 @@ final class Registry {
 				add_action( 'plugins_loaded', array( $adapter_registry, 'boot' ), 20 );
 			}
 
-			// Register REST API endpoints.
+			// Initialize the direct-payment gateway registry.
+			$gateway_registry = Gateways\Gateway_Registry::for_slug( $slug );
+			if ( did_action( 'plugins_loaded' ) ) {
+				$gateway_registry->boot();
+			} else {
+				add_action( 'plugins_loaded', array( $gateway_registry, 'boot' ), 20 );
+			}
+
+			// Register REST API endpoints (existing balance/topup + gateway routes).
 			add_action( 'rest_api_init', static function () use ( $slug, $config ): void {
-				$rest = new REST( $slug, $config['prefix'], $config['user_type'] );
-				$rest->register_routes();
+				( new REST( $slug, $config['prefix'], $config['user_type'] ) )->register_routes();
+				( new Gateways\Webhook_Controller( $slug ) )->register_routes();
 			} );
 		}
 	}
