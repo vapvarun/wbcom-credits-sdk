@@ -290,6 +290,126 @@ final class Admin_Form_Renderer {
 	}
 
 	/**
+	 * Return per-gateway view descriptors so a consuming plugin can render
+	 * gateway settings inside ITS OWN card / table markup instead of the
+	 * SDK's default template.
+	 *
+	 * Use this when your settings page already has a card pattern you
+	 * want every section to share (e.g., `.your-prefix-settings-block`).
+	 * Pair with {@see render_field()} for individual rows.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $slug Consuming plugin slug.
+	 * @return array<int, array<string, mixed>> List of { id, label, available, fields, values, webhook_url }.
+	 */
+	public static function get_gateway_views( string $slug ): array {
+		$gateways = Gateway_Registry::for_slug( $slug )->get_all();
+		$saved    = self::get_saved_settings( $slug );
+		$out      = array();
+
+		foreach ( $gateways as $gateway ) {
+			$id     = $gateway->get_id();
+			$values = (array) ( $saved[ $id ] ?? array() );
+
+			$out[] = array(
+				'id'              => $id,
+				'label'           => $gateway->get_label(),
+				'available'       => $gateway->is_available(),
+				'fields'          => $gateway->get_settings_fields(),
+				'values'          => $values,
+				'webhook_url'     => self::webhook_url( $slug, $id ),
+				'success_default' => self::default_success_url(),
+				'cancel_default'  => self::default_cancel_url(),
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Render a single gateway settings field as a label-paired form-table
+	 * input, ready to drop inside any `<table class="form-table"><tbody>`
+	 * that the consuming plugin owns. Output is consistent with the
+	 * default template but markup is minimal so it composes into ANY
+	 * settings card layout.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param array  $field      Field schema entry from get_settings_fields().
+	 * @param mixed  $value      Currently-saved value for the field.
+	 * @param string $gateway_id Owning gateway id (for input name + id).
+	 * @return void Echoes the `<tr>...</tr>`.
+	 */
+	public static function render_field( array $field, $value, string $gateway_id ): void {
+		$key = (string) ( $field['key'] ?? '' );
+		if ( '' === $key ) {
+			return;
+		}
+
+		$type        = (string) ( $field['type'] ?? 'text' );
+		$label       = (string) ( $field['label'] ?? $key );
+		$input_name  = sprintf( 'gateway_%s[%s]', $gateway_id, $key );
+		$input_id    = sprintf( 'gw-%s-%s', $gateway_id, $key );
+		$is_secret   = 'password' === $type;
+		$has_value   = '' !== (string) $value;
+		?>
+		<tr>
+			<th scope="row">
+				<label for="<?php echo esc_attr( $input_id ); ?>"><?php echo esc_html( $label ); ?></label>
+			</th>
+			<td>
+				<?php if ( 'bool' === $type ) : ?>
+					<label>
+						<input type="checkbox" id="<?php echo esc_attr( $input_id ); ?>" name="<?php echo esc_attr( $input_name ); ?>" value="1" <?php checked( ! empty( $value ) ); ?> />
+						<?php echo esc_html( $label ); ?>
+					</label>
+				<?php elseif ( 'select' === $type ) : ?>
+					<select id="<?php echo esc_attr( $input_id ); ?>" name="<?php echo esc_attr( $input_name ); ?>">
+						<?php foreach ( (array) ( $field['options'] ?? array() ) as $opt_value => $opt_label ) : ?>
+							<option value="<?php echo esc_attr( (string) $opt_value ); ?>" <?php selected( (string) $value, (string) $opt_value ); ?>>
+								<?php echo esc_html( (string) $opt_label ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				<?php elseif ( $is_secret ) : ?>
+					<input
+						type="password"
+						id="<?php echo esc_attr( $input_id ); ?>"
+						name="<?php echo esc_attr( $input_name ); ?>"
+						value=""
+						class="regular-text"
+						autocomplete="new-password"
+						<?php if ( $has_value ) : ?>
+							placeholder="<?php esc_attr_e( '•••••••• (saved — leave blank to keep)', 'wbcom-credits-sdk' ); ?>"
+						<?php endif; ?>
+					/>
+					<?php if ( $has_value ) : ?>
+						<p class="description"><?php esc_html_e( 'A value is already saved. Type a new value to replace it; leave blank to keep the existing one.', 'wbcom-credits-sdk' ); ?></p>
+					<?php endif; ?>
+				<?php elseif ( 'url' === $type ) : ?>
+					<input
+						type="url"
+						id="<?php echo esc_attr( $input_id ); ?>"
+						name="<?php echo esc_attr( $input_name ); ?>"
+						value="<?php echo esc_attr( (string) $value ); ?>"
+						class="regular-text"
+					/>
+				<?php else : ?>
+					<input
+						type="text"
+						id="<?php echo esc_attr( $input_id ); ?>"
+						name="<?php echo esc_attr( $input_name ); ?>"
+						value="<?php echo esc_attr( (string) $value ); ?>"
+						class="regular-text"
+					/>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
 	 * Resolve the webhook URL for a slug + gateway id.
 	 *
 	 * @since 1.2.0
