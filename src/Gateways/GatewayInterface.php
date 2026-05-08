@@ -68,17 +68,23 @@ interface GatewayInterface {
 	 * matching webhook can verify the payment matches the request.
 	 *
 	 * @since 1.0.0
+	 * @since 1.2.1 $return_url parameter added.
 	 *
-	 * @param string $slug        Plugin slug.
-	 * @param int    $user_id     WordPress user ID.
-	 * @param int    $credits     Credits being purchased.
-	 * @param int    $price_cents Price in cents (e.g., 999 for $9.99).
-	 * @param string $currency    ISO 4217 currency code.
+	 * @param string      $slug        Plugin slug.
+	 * @param int         $user_id     WordPress user ID.
+	 * @param int         $credits     Credits being purchased.
+	 * @param int         $price_cents Price in cents (e.g., 999 for $9.99).
+	 * @param string      $currency    ISO 4217 currency code.
+	 * @param string|null $return_url  Optional. Frontend page the user came
+	 *     from. When provided, gateways append `?wbcom_credits=success` /
+	 *     `?wbcom_credits=cancel` to it and use as success_url / cancel_url
+	 *     overrides. Lets blocks placed on multiple pages bring users back
+	 *     to the page they clicked from instead of the saved settings URL.
 	 * @return string Hosted checkout URL.
 	 *
 	 * @throws \RuntimeException When the provider rejects the request.
 	 */
-	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD' ): string;
+	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string;
 
 	/**
 	 * Verify the webhook signature using raw request body + headers.

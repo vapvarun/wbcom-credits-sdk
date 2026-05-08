@@ -60,6 +60,13 @@ final class Webhook_Controller {
 					'credits'     => array( 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ),
 					'price_cents' => array( 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ),
 					'currency'    => array( 'type' => 'string', 'default' => 'USD', 'sanitize_callback' => 'sanitize_text_field' ),
+					// Optional per-checkout return URL — when provided, the
+					// gateway uses it as the redirect base for both success
+					// and cancel paths (with `?wbcom_credits=success/cancel`
+					// appended). Lets blocks placed on multiple pages bring
+					// users back to the page they clicked from. Validated
+					// to a same-host URL to prevent open-redirect abuse.
+					'return_url'  => array( 'type' => 'string', 'sanitize_callback' => 'esc_url_raw' ),
 				),
 			)
 		);
@@ -106,13 +113,26 @@ final class Webhook_Controller {
 			return new \WP_Error( 'gateway_unavailable', 'Gateway is not configured.', array( 'status' => 409 ) );
 		}
 
+		// Same-host validation on return_url to block open-redirect abuse.
+		// We accept relative-to-site URLs only — anything pointing off-site
+		// is dropped silently, falling back to settings success/cancel URLs.
+		$return_url = (string) ( $request->get_param( 'return_url' ) ?: '' );
+		if ( '' !== $return_url ) {
+			$return_host = wp_parse_url( $return_url, PHP_URL_HOST );
+			$site_host   = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+			if ( $return_host !== $site_host ) {
+				$return_url = '';
+			}
+		}
+
 		try {
 			$url = $gateway->create_checkout(
 				$this->slug,
 				get_current_user_id(),
 				(int) $request->get_param( 'credits' ),
 				(int) $request->get_param( 'price_cents' ),
-				strtoupper( (string) ( $request->get_param( 'currency' ) ?: 'USD' ) )
+				strtoupper( (string) ( $request->get_param( 'currency' ) ?: 'USD' ) ),
+				'' !== $return_url ? $return_url : null
 			);
 		} catch ( \RuntimeException $e ) {
 			return new \WP_Error( 'gateway_error', $e->getMessage(), array( 'status' => 502 ) );

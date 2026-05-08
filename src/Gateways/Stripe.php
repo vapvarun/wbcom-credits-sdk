@@ -74,7 +74,7 @@ final class Stripe extends Abstract_Gateway {
 	 *
 	 * @throws \RuntimeException When parameters are invalid or Stripe rejects the request.
 	 */
-	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD' ): string {
+	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string {
 		if ( $user_id <= 0 || $credits <= 0 || $price_cents <= 0 ) {
 			throw new \RuntimeException( 'Invalid checkout parameters.' );
 		}
@@ -84,8 +84,17 @@ final class Stripe extends Abstract_Gateway {
 			throw new \RuntimeException( 'Stripe is not configured.' );
 		}
 
-		$success_url = (string) ( $settings['success_url'] ?? '' );
-		$cancel_url  = (string) ( $settings['cancel_url'] ?? '' );
+		// Per-checkout return_url override — when the consuming block knows
+		// the page it was rendered on (e.g. dashboard?tab=credits), it passes
+		// that here so users land back on the same page after Stripe instead
+		// of the global success_url. Falls back to settings, then home_url.
+		$return_url  = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
+		$success_url = '' !== $return_url
+			? add_query_arg( array( 'wbcom_credits' => 'success', 'gateway' => self::ID, 'credits' => $credits ), $return_url )
+			: (string) ( $settings['success_url'] ?? '' );
+		$cancel_url  = '' !== $return_url
+			? add_query_arg( array( 'wbcom_credits' => 'cancel', 'gateway' => self::ID ), $return_url )
+			: (string) ( $settings['cancel_url'] ?? '' );
 		if ( '' === $success_url ) {
 			$success_url = home_url( '/?wbcom_credits=success' );
 		}

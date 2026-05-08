@@ -73,7 +73,7 @@ final class PayPal extends Abstract_Gateway {
 	 *
 	 * @throws \RuntimeException When PayPal rejects the request or no approval link is returned.
 	 */
-	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD' ): string {
+	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string {
 		if ( $user_id <= 0 || $credits <= 0 || $price_cents <= 0 ) {
 			throw new \RuntimeException( 'Invalid checkout parameters.' );
 		}
@@ -85,6 +85,21 @@ final class PayPal extends Abstract_Gateway {
 		}
 
 		$amount_str = number_format( $price_cents / 100, 2, '.', '' );
+
+		// Per-checkout return_url override — see Stripe.php for the same logic.
+		$return_url = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
+		$paypal_success = '' !== $return_url
+			? add_query_arg( array( 'wbcom_credits' => 'success', 'gateway' => self::ID, 'credits' => $credits ), $return_url )
+			: (string) ( $settings['success_url'] ?? '' );
+		$paypal_cancel  = '' !== $return_url
+			? add_query_arg( array( 'wbcom_credits' => 'cancel', 'gateway' => self::ID ), $return_url )
+			: (string) ( $settings['cancel_url'] ?? '' );
+		if ( '' === $paypal_success ) {
+			$paypal_success = add_query_arg( 'wbcom_credits', 'success', home_url( '/' ) );
+		}
+		if ( '' === $paypal_cancel ) {
+			$paypal_cancel = add_query_arg( 'wbcom_credits', 'cancel', home_url( '/' ) );
+		}
 
 		$body = array(
 			'intent'              => 'CAPTURE',
@@ -110,8 +125,8 @@ final class PayPal extends Abstract_Gateway {
 				),
 			),
 			'application_context' => array(
-				'return_url' => add_query_arg( 'wbcom_credits', 'success', home_url( '/' ) ),
-				'cancel_url' => add_query_arg( 'wbcom_credits', 'cancel', home_url( '/' ) ),
+				'return_url' => $paypal_success,
+				'cancel_url' => $paypal_cancel,
 			),
 		);
 
