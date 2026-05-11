@@ -12,17 +12,18 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 
 ---
 
-## Current state — 2026-05-11 audit
+## Current state — 2026-05-11 audit (corrected after `git pull`)
 
 | Concern | Reality |
 |---|---|
-| Canonical repo head | `a7846b4 feat(v1.1): add Template loader` — at **v1.1** |
-| Shipping version | **1.2.0** in `WPConnectPress/vendor/wbcom-credits-sdk/` and `wp-career-board-pro/vendor/wbcom-credits-sdk/` |
-| Drift | Canonical is missing: 7 gateway-helper classes, the multi-version coexistence loader, `composer.json`, `phpunit.xml.dist`, the 4 existing gateway tests |
+| Canonical repo head | `dcfd0bc feat(sdk): expose get_gateway_views() + render_field()` — **post-v1.2.0** |
+| Tagged releases | `v1.1.0`, `v1.1.1`, `v1.2.0` |
+| Shipping version in vendors | **1.2.0** in `WPConnectPress/vendor/wbcom-credits-sdk/` and `wp-career-board-pro/vendor/wbcom-credits-sdk/` |
+| Drift direction | **canonical is AHEAD of vendors** by 3 commits: `db2ec4c` (Admin_Form_Renderer + consumer-gateway integration guide), `1bd464e` (per-checkout return_url override), `dcfd0bc` (get_gateway_views + render_field) — none of these are shipping in production yet |
 | Active consumers | `wpconnectpress` (slug=wpconnectpress, prefix=wpcp), `wp-career-board-pro` (slug=wp-career-board, prefix=wcb) |
-| Empirically verified | three plugins active simultaneously → zero PHP fatals, separate ledger tables, separate REST namespaces, both consumers registered in the shared `Registry` singleton |
+| Empirically verified | three plugins active simultaneously → zero PHP fatals, separate ledger tables (`wp_wpcp_credit_ledger`, `wp_wcb_credit_ledger`), separate REST namespaces, both consumers registered in the shared `Registry` singleton |
 | Known SDK bug | REST `balance` handler runs `WHERE user_id = ?` regardless of the consumer's `user_type` — breaks Career Board (`employer_id` column), returns `balance=0` instead of the real balance with a `Unknown column` warning |
-| Test coverage | 4 unit tests in vendor (`tests/Gateways/`), 0 in canonical |
+| Test coverage | 4 unit tests in canonical (`tests/Gateways/`): Idempotency, PendingCheckouts, GatewayEvent, SignatureVerifier. No Registry / Ledger / REST / Versions / Adapter / Template tests yet |
 | Compatibility matrix | not documented |
 | Cross-plugin features | none (no transfer, no unified view, no shared admin) |
 
@@ -30,14 +31,15 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 
 ## Phase 1 — Foundation (Weeks 1-3, "stop the bleeding")
 
-**Goal:** make the canonical repo the actual source of truth + lock in what is already empirically verified.
+**Goal:** lock canonical as the actual source of truth + cover the multi-plugin guarantees with CI tests + cut a fresh tag that brings the production vendors current.
 
 ### Deliverables
 
-1. **Reconcile canonical to v1.2.0**
-   - Pull the v1.2.0 diff from `wp-career-board-pro/vendor/wbcom-credits-sdk/` into canonical.
-   - Tag `v1.2.0`.
-   - Add the gateway-added-in-1.2 changes documented to CHANGELOG.
+1. **Cut SDK v1.2.1 release** — package the 3 post-1.2.0 commits (Admin_Form_Renderer, per-checkout return_url, gateway-views helper) into a clean tag.
+   - `git tag -a v1.2.1` from current `dcfd0bc` HEAD.
+   - Add CHANGELOG.md with the diff summary.
+   - Re-vendor into WPConnectPress + wp-career-board-pro.
+   - Each consumer ships a patch release picking up v1.2.1.
 
 2. **Choose the vendor sync mechanism**
    - **Recommendation:** composer with a path/VCS repository.

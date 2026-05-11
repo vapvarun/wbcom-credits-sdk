@@ -11,6 +11,9 @@
         <testsuite name="gateways">
             <directory>tests/Gateways</directory>
         </testsuite>
+        <testsuite name="versions">
+            <directory>tests/Versions</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

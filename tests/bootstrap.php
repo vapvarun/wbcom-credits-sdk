@@ -65,8 +65,15 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! function_exists( '__return_null' ) ) {
+	function __return_null() {
+		return null;
+	}
+}
+
 // Load classes under test. The SDK loader is pure PHP — no WP needed.
 require_once __DIR__ . '/../src/Gateways/Idempotency.php';
 require_once __DIR__ . '/../src/Gateways/Pending_Checkouts.php';
 require_once __DIR__ . '/../src/Gateways/Signature_Verifier.php';
 require_once __DIR__ . '/../src/Gateways/Gateway_Event.php';
+require_once __DIR__ . '/../src/Versions.php';
