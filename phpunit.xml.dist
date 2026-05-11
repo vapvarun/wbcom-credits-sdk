@@ -20,6 +20,9 @@
         <testsuite name="integration">
             <directory>tests/Integration</directory>
         </testsuite>
+        <testsuite name="performance">
+            <directory>tests/Performance</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
