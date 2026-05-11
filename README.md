@@ -472,6 +472,16 @@ The SDK creates one table per consuming plugin: `{wp_prefix}{plugin_prefix}_cred
 
 The ledger is append-only. The only DELETE operation is `cancel_hold()` for unconsumed holds.
 
+### Schema contract (since 1.3.0)
+
+The SDK ships **one canonical schema**. Consumer plugins MUST NOT pre-empt `Ledger::maybe_create_table()` with their own `CREATE TABLE` and MUST NOT rename columns.
+
+- Use `user_id` for the WP user ID, even when your domain calls them "employer", "attendee", "member", or "customer". Expose the domain-readable name in your plugin's public API (REST shapes, admin UI, CLI), not in the database column.
+- Use `item_id` for the associated entity, even when your domain calls it "post", "booking", "course", or "subscription".
+- Add columns via your own join tables. Do not extend `*_credit_ledger`.
+
+The contract is enforced by `tests/Ledger/SchemaContractTest.php` — schema renames surface as CI failures before merge. See `docs/MIGRATION-1.3.0-career-board.md` for an example consumer-side migration.
+
 ---
 
 ## Version Conflict Prevention

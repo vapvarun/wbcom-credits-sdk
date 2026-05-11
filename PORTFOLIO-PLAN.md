@@ -22,7 +22,7 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 | Drift direction | **canonical is AHEAD of vendors** by 3 commits: `db2ec4c` (Admin_Form_Renderer + consumer-gateway integration guide), `1bd464e` (per-checkout return_url override), `dcfd0bc` (get_gateway_views + render_field) — none of these are shipping in production yet |
 | Active consumers | `wpconnectpress` (slug=wpconnectpress, prefix=wpcp), `wp-career-board-pro` (slug=wp-career-board, prefix=wcb) |
 | Empirically verified | three plugins active simultaneously → zero PHP fatals, separate ledger tables (`wp_wpcp_credit_ledger`, `wp_wcb_credit_ledger`), separate REST namespaces, both consumers registered in the shared `Registry` singleton |
-| Known SDK bug | REST `balance` handler runs `WHERE user_id = ?` regardless of the consumer's `user_type` — breaks Career Board (`employer_id` column), returns `balance=0` instead of the real balance with a `Unknown column` warning |
+| Schema contract violation | Career Board Pro ships its own `CREATE TABLE` (`core/class-pro-install.php:441`) with columns `employer_id`/`post_id`, which pre-empts the SDK's `Ledger::maybe_create_table()`. All SDK queries then fail because they reference the standard `user_id` column. **Decision: Option B (uniform schema).** Career Board Pro migrates to SDK's standard columns; SDK keeps a single canonical schema; CI regression tests lock the contract. |
 | Test coverage | 4 unit tests in canonical (`tests/Gateways/`): Idempotency, PendingCheckouts, GatewayEvent, SignatureVerifier. No Registry / Ledger / REST / Versions / Adapter / Template tests yet |
 | Compatibility matrix | not documented |
 | Cross-plugin features | none (no transfer, no unified view, no shared admin) |
@@ -35,11 +35,18 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 
 ### Deliverables
 
-1. **Cut SDK v1.2.1 release** — package the 3 post-1.2.0 commits (Admin_Form_Renderer, per-checkout return_url, gateway-views helper) into a clean tag.
-   - `git tag -a v1.2.1` from current `dcfd0bc` HEAD.
-   - Add CHANGELOG.md with the diff summary.
-   - Re-vendor into WPConnectPress + wp-career-board-pro.
-   - Each consumer ships a patch release picking up v1.2.1.
+1. **Cut SDK v1.3.0 release** — the 3 post-1.2.0 commits add new public API (Admin_Form_Renderer, get_gateway_views(), render_field(), per-checkout return_url override) so by strict semver this is a minor bump, not a patch.
+   - Add CHANGELOG.md with the diff summary + breaking-change-free note.
+   - `git tag -a v1.3.0` once the user_type column bug is fixed + Phase 1 tests land.
+   - Re-vendor into WPConnectPress + wp-career-board-pro. Each consumer ships a minor release picking up v1.3.0.
+   - **Renumber downstream features in this plan accordingly:** Transfer API moves to v1.4.0, Unified Wallet stays v2.0.
+
+   **v1.3.0 deliverables:**
+   - Existing 3 post-1.2.0 commits (Admin_Form_Renderer, return_url, get_gateway_views).
+   - Versions tests (already landed in `a3c738b`).
+   - **Schema contract enforcement** — codified in README + locked by CI tests (`tests/Ledger/SchemaContractTest.php`). Single canonical schema: `user_id`, `item_id`, no per-consumer column renaming.
+   - **Career Board Pro migration spec** — `docs/MIGRATION-1.3.0-career-board.md` documents the one-shot column rename + install-script change consumer plugins must adopt before bundling v1.3.0.
+   - **CHANGELOG.md** with explicit note: "schema contract clarified — consumers must use SDK's canonical Ledger columns; Career Board Pro requires a one-time migration."
 
 2. **Choose the vendor sync mechanism**
    - **Recommendation:** composer with a path/VCS repository.
@@ -119,7 +126,7 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 
 ### Deliverables
 
-12. **Transfer API (SDK 1.3.0)**
+12. **Transfer API (SDK 1.4.0)**
     - `Credits::transfer(from_slug, to_slug, user_id, amount, reason)`
     - Single-transaction `$wpdb->query('START TRANSACTION')` for atomic dual-ledger writes.
     - Shared `transfer_group_id` column on both ledgers for audit/refund.
@@ -131,7 +138,7 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
     - One shared `wp_wbcom_credit_wallet` table keyed by `user_id`, total balance.
     - Each consumer still has its own ledger for line-item history; balance comes from the wallet.
     - Migration script for existing per-plugin balances: sum each user's per-plugin balance → seed wallet → keep ledgers as history.
-    - Backward-compatible: SDK 1.3 consumers keep working in per-plugin-pool mode; opt-in flag flips to wallet mode.
+    - Backward-compatible: SDK 1.4 consumers keep working in per-plugin-pool mode; opt-in flag flips to wallet mode.
 
 14. **Cross-plugin admin dashboard**
     - One settings screen under WP Admin → "Credits". Lists every consumer plugin, ledger row count, recent transactions, links to per-consumer settings.
