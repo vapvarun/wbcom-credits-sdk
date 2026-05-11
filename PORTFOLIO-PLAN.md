@@ -45,8 +45,9 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
    - Existing 3 post-1.2.0 commits (Admin_Form_Renderer, return_url, get_gateway_views).
    - Versions tests (already landed in `a3c738b`).
    - **Schema contract enforcement** — codified in README + locked by CI tests (`tests/Ledger/SchemaContractTest.php`). Single canonical schema: `user_id`, `item_id`, no per-consumer column renaming.
-   - **Career Board Pro migration spec** — `docs/MIGRATION-1.3.0-career-board.md` documents the one-shot column rename + install-script change consumer plugins must adopt before bundling v1.3.0.
-   - **CHANGELOG.md** with explicit note: "schema contract clarified — consumers must use SDK's canonical Ledger columns; Career Board Pro requires a one-time migration."
+   - **Career Board Pro migration spec** — `docs/MIGRATION-1.3.0-career-board.md` documents the one-shot column rename + install-script change consumer plugins must adopt before bundling v1.3.0. ✅ Migration shipped in wp-career-board-pro 1.1.1.
+   - **Server-authoritative pricing (security fix, issue #2)** — `src/Gateways/Pricing.php` + 12 regression tests. Closes the client-supplied-price_cents tampering vulnerability. Consumer-side playbook: `docs/MIGRATION-1.3.0-pricing.md`. Site-owner setup guides: `docs/SETUP-STRIPE.md`, `docs/SETUP-PAYPAL.md`.
+   - **CHANGELOG.md** with explicit notes for both clarifications + the security fix.
 
 2. **Choose the vendor sync mechanism**
    - **Recommendation:** composer with a path/VCS repository.

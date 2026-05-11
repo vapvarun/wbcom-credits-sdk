@@ -95,6 +95,15 @@ if ( ! function_exists( '_doing_it_wrong' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_args' ) ) {
+	function wp_parse_args( $args, $defaults = array() ) {
+		if ( ! is_array( $args ) ) {
+			$args = array();
+		}
+		return array_merge( (array) $defaults, $args );
+	}
+}
+
 if ( ! function_exists( '__' ) ) {
 	function __( string $s, ?string $domain = null ): string {
 		return $s;
@@ -279,3 +288,5 @@ require_once __DIR__ . '/../src/Gateways/Gateway_Event.php';
 require_once __DIR__ . '/../src/Versions.php';
 require_once __DIR__ . '/../src/Ledger.php';
 require_once __DIR__ . '/../src/Credits.php';
+require_once __DIR__ . '/../src/Registry.php';
+require_once __DIR__ . '/../src/Gateways/Pricing.php';
