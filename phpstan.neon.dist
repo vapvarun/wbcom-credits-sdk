@@ -1,0 +1,35 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    paths:
+        - src
+        - wbcom-credits-sdk.php
+    excludePaths:
+        - vendor/*
+        - tests/*
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # Third-party plugin APIs the SDK optionally integrates with —
+        # WC, WC Subscriptions, WC Memberships, PMPro, MemberPress.
+        # The Adapters/ classes only call these when class_exists() / function_exists()
+        # gates pass at runtime, so PHPStan correctly says "I don't see them"
+        # but the code is safe.
+        - '#Function (wc_get_products|wc_get_order|wcs_get_subscription|pmpro_getLevel|wc_memberships_get_user_membership) not found#'
+        - '#Class (WC_Order|WC_Subscription|WC_Memberships_User_Membership|MeprProduct|MeprTransaction|MeprEvent|MemberOrder) not found#'
+        - '#Call to method \w+\(\) on an unknown class (WC_Order|WC_Subscription|WC_Memberships_User_Membership|MeprProduct|MeprTransaction|MeprEvent|MemberOrder)#'
+        - '#Parameter \$(subscription|order|membership|event) of method \S+::\S+ has invalid type#'
+        - '#Access to property \$\w+ on an unknown class (WC_Order|WC_Subscription|WC_Memberships_User_Membership|MeprProduct|MeprTransaction|MeprEvent|MemberOrder)#'
+
+        # Constants defined in the bootstrap file are referenced from src/
+        # — PHPStan can't track them across the require-once boundary.
+        - '#Constant WBCOM_CREDITS_SDK_PATH not found#'
+
+        # Reserved-for-extension properties — set at construction, read by
+        # subclasses or future feature work. Not a real defect.
+        - identifier: property.onlyWritten
+          paths:
+              - src/REST.php
+              - src/Consumer.php

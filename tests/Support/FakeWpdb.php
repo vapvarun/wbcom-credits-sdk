@@ -24,6 +24,8 @@ final class FakeWpdb {
 
 	public string $prefix = 'wp_';
 
+	public int $insert_id = 0;
+
 	/** @var array<string, array<int, array<string,mixed>>> */
 	public array $tables = array();
 
@@ -98,6 +100,7 @@ final class FakeWpdb {
 		$data['id']         = count( $this->tables[ $table ] ) + 1;
 		$data['created_at'] = $data['created_at'] ?? gmdate( 'Y-m-d H:i:s.u' );
 		$this->tables[ $table ][] = $data;
+		$this->insert_id = (int) $data['id'];
 		return 1;
 	}
 

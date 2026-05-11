@@ -17,6 +17,9 @@
         <testsuite name="ledger">
             <directory>tests/Ledger</directory>
         </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

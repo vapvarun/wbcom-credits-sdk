@@ -100,6 +100,18 @@ else
     section "PHPUnit suite (skipped via --skip-tests)"
 fi
 
+# ─── 3a. PHPStan ────────────────────────────────────────────────────────────
+section "Static analysis (PHPStan)"
+if [ ! -x vendor/bin/phpstan ]; then
+    fail "vendor/bin/phpstan not installed — run \`composer install\`"
+elif vendor/bin/phpstan analyse --no-progress --memory-limit=1G >/tmp/wcb-sdk-phpstan.log 2>&1; then
+    pass "PHPStan: $(grep -E '^\[OK\]|No errors' /tmp/wcb-sdk-phpstan.log | tail -1)"
+else
+    ERR_COUNT="$(grep -oE 'Found [0-9]+ errors?' /tmp/wcb-sdk-phpstan.log | tail -1)"
+    fail "PHPStan reported $ERR_COUNT — see /tmp/wcb-sdk-phpstan.log"
+    tail -20 /tmp/wcb-sdk-phpstan.log | sed 's/^/    /'
+fi
+
 # ─── 4. Class loader coherence ──────────────────────────────────────────────
 section "Class loader map vs filesystem"
 
