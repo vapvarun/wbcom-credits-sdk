@@ -1,0 +1,38 @@
+name: stability-audit
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.json') }}
+
+      - name: Install dependencies
+        run: composer install --no-progress --no-interaction --prefer-dist
+
+      - name: Run SDK stability audit
+        run: bash bin/audit.sh

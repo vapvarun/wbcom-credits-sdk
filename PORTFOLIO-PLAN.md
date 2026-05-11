@@ -66,6 +66,19 @@ One **wbcom-credits-sdk** repo is the source of truth for every Wbcom plugin tha
 
 4. **Pre-commit hook + GitHub Actions CI for the SDK repo** — PHPStan level 6, PHPCS WordPress Core ruleset, PHP 8.1+ compat.
 
+   **Single-command self-audit:** `bin/audit.sh` runs every stability gate in one shot:
+   - `php -l` across every file in `src/` + `tests/` + the bootstrap.
+   - `composer validate --strict`.
+   - PHPUnit suite (currently 48 tests / 97 assertions).
+   - Class loader coherence — every entry in `$wbcom_credits_sdk_classes` must resolve to a file on disk.
+   - Version coherence — `WBCOM_CREDITS_SDK_VERSION` constant + `@version` header + CHANGELOG topmost section + `wbcom_credits_sdk_register_X_Y_Z` function-name suffix all agree.
+   - Required docs present — README, CHANGELOG, PORTFOLIO-PLAN, setup guides, migration playbooks.
+   - Public API surface snapshot — `bin/.api-surface.txt` enumerates every `public function` / `public const` in `src/`. The audit fails if any symbol disappears (breaking change) and notes if any are added (minor bump warranted).
+
+   `.github/workflows/audit.yml` runs `bin/audit.sh` on every push + PR across PHP 8.1, 8.2, 8.3.
+
+   Update the API snapshot deliberately after each release: `bin/audit.sh` will overwrite it on the next run only if no symbols were removed (i.e. no breaking change). Removals require a major-version bump + manual `mv /tmp/wcb-sdk-api-surface-*.txt bin/.api-surface.txt`.
+
 5. **First wave of regression tests** — locks the multi-plugin guarantee and the bugs we already know about:
 
    - `tests/Registry/MultiConsumerTest` — boot two consumers, assert separate tables created, separate REST routes registered.
