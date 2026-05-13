@@ -2,6 +2,26 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Documentation
+
+The SDK's primary purpose — captured at the top of the README — is two-fold:
+
+1. **The SDK owns every top-up path.** Consumer plugins (WB Listora, ProjectFlow, Career Board, Ad Manager, …) do NOT build their own payment flow. They register with the SDK and the SDK provides all top-up surfaces: bundled membership/subscription adapters (WooCommerce, WooSubscriptions, WooMemberships, PMPro, MemberPress) AND direct payment gateways (Stripe, PayPal, plus custom gateways via the gateway interface). When a vendor's WooSubscription renews, when a customer buys a credit pack via Stripe checkout, when an admin clicks "Grant credits" — all of those land in the same SDK ledger via the same primitives.
+
+2. **The SDK is the canonical event source.** Because consumer plugins don't own the top-up surfaces, they CANNOT learn about top-ups from inside their own code. They MUST listen to the SDK's `wbcom_credits_*` actions. This is what the new **Consumer Architecture Patterns** section in the README is for: every consumer plugin needs an event bridge that re-fires the SDK's generic actions as plugin-namespaced actions, slug-guarded. Without the bridge, downstream logic (auto-resume, audit, notifications, outgoing webhooks) silently breaks for the majority of paying customers — because the majority of paying customers use one of the SDK adapter paths the consumer's wrapper never sees.
+
+New README sections (between *Manual Credit Operations* and *Transaction History*):
+
+- **Consumer Architecture Patterns — Pattern 1: The SDK Event Bridge.** Concrete anti-pattern (firing from your own wrapper — broken), pattern (bridge SDK actions to your namespace — correct), reference implementation, slug-guard, and an explicit note that `Credits::adjust()` does not fire SDK actions.
+- **Consumer Architecture Patterns — Pattern 2: Hold → Commit Atomicity.** When a credit deduction is paired with downstream side effects (post meta, perk activation, external API call), use `Credits::hold()` → side effects → `Credits::deduct()` (commit) with `Credits::cancel_hold()` on failure. Prevents the "credits deducted but perk failed" class of bug. Ledger always shows `hold + deduct` or `hold + cancel_hold` — never an orphan debit.
+- **Hooks section** clarified with the actions table (event → args → trigger conditions) plus an explicit note that adapter-originated top-ups fire the same events as direct wrapper calls.
+
+### Why this matters
+
+Consumer plugin WB Listora shipped its auto-resume-on-topup feature with a listener bound to its own plugin-namespaced action — fired only from its own wrapper. Real-world vendors top up via WooSubscriptions, MemberPress, PMPro, etc., which call `Credits::topup()` directly through the SDK adapter chain. The plugin's listener never ran for any of those customers — auto-resume was silently broken for the majority of paying users. Documenting the bridge pattern + the SDK-owns-top-ups principle in the SDK README ensures the next consumer plugin doesn't re-discover this in production.
+
 ## [1.3.0] - 2026-05-11
 
 ### Security (BREAKING for direct-gateway consumers)

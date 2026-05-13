@@ -2,6 +2,16 @@
 
 Reusable credit engine for WordPress plugins. Append-only ledger, hold/deduct/refund lifecycle, 5 built-in payment adapters (WooCommerce, WC Subscriptions, WC Memberships, PMPro, MemberPress), 2 built-in **direct payment gateways** (Stripe, PayPal) with full refund support, REST API — ready to use in any Wbcom plugin.
 
+## Primary Purpose
+
+The SDK is **the** credit infrastructure for Wbcom plugins. Two responsibilities, both owned by the SDK:
+
+1. **All top-up paths.** Consumer plugins do NOT build their own payment flow. Vendors top up their credit balance through the SDK's bundled membership/subscription adapters (WooCommerce, WC Subscriptions, WC Memberships, PMPro, MemberPress) OR through direct payment gateways (Stripe, PayPal, plus any custom gateway implementing `GatewayInterface`). When a customer renews a Woo subscription, buys a credit pack via Stripe, or an admin grants credits manually — all of those land in the same ledger via the same primitives.
+
+2. **Canonical event source.** Because the SDK owns every top-up surface, consumer plugins CANNOT learn about top-ups from inside their own code. They MUST listen to the SDK's generic `wbcom_credits_*` actions and bridge those into their own plugin-namespaced events. The [Consumer Architecture Patterns](#consumer-architecture-patterns-read-this--every-consumer-plugin-needs-both) section below shows exactly how to do that — read it before wiring your consumer plugin's downstream listeners.
+
+> If you find yourself writing payment code inside your consumer plugin, you're almost certainly working around the SDK. Open an issue and we'll either point you at the right SDK surface or extend it.
+
 ## Quick Start — 5 Lines
 
 ```php
@@ -87,6 +97,120 @@ Credits::refund( 'my-plugin', $user_id, 5, $item_id, 'Access denied — credits 
 Credits::cancel_hold( 'my-plugin', $user_id, $item_id );
 ```
 
+### Consumer Architecture Patterns (READ THIS — every consumer plugin needs both)
+
+Two patterns every consumer plugin MUST implement. Skipping them re-introduces customer-facing bugs that consumer plugins have already hit in production — they're documented here so the next plugin doesn't have to discover them again.
+
+#### Pattern 1: The SDK Event Bridge
+
+The SDK fires three generic actions on EVERY ledger write — `wbcom_credits_topped_up`, `wbcom_credits_deducted`, `wbcom_credits_refunded`. They fire regardless of where the write came from:
+
+- Your own wrapper methods (`MyPlugin\Credits::add_credits(...)`)
+- Any of the 5 bundled SDK adapters (WooCommerce, WooSubscriptions, MemberPress, PMPro, WooMemberships)
+- Direct `Wbcom\Credits\Credits::topup()` calls from custom integrations
+- Direct gateway webhook receivers (Stripe / PayPal / your own gateway)
+
+**Anti-pattern (DON'T DO THIS):** firing a plugin-namespaced action from inside your wrapper method.
+
+```php
+// ❌ BROKEN: this only fires when YOUR wrapper is the caller. SDK
+// adapters call Credits::topup() directly and bypass this entirely.
+public static function add_credits( $user_id, $amount ) {
+    Credits::topup( 'my-plugin', $user_id, $amount );
+    do_action( 'my_plugin_credits_added', $user_id, $amount );
+}
+```
+
+**Why it breaks:** vendors who pay via WooSubscriptions / PMPro / MemberPress trigger SDK adapter top-ups. SDK fires `wbcom_credits_topped_up`. Your `my_plugin_credits_added` listener never fires because nothing called your wrapper. Auto-resume of paused listings, audit log, outgoing webhooks — all silently broken for paying customers.
+
+**Pattern (DO THIS):** bridge SDK events to your namespaced actions in ONE place, slug-guarded:
+
+```php
+class Credit_System {
+    const SDK_SLUG = 'my-plugin';
+
+    public function init() {
+        self::bootstrap_event_bridge();
+    }
+
+    /**
+     * Bridge SDK credit events to the canonical plugin action surface.
+     * Fires `my_plugin_credits_added` / `_deducted` / `_refunded` EXACTLY
+     * ONCE per ledger write, regardless of origin.
+     */
+    private static function bootstrap_event_bridge() {
+        if ( ! class_exists( '\\Wbcom\\Credits\\Credits' ) ) {
+            return;
+        }
+
+        add_action( 'wbcom_credits_topped_up', array( __CLASS__, 'on_sdk_topped_up' ), 10, 4 );
+        add_action( 'wbcom_credits_deducted', array( __CLASS__, 'on_sdk_deducted' ), 10, 4 );
+        add_action( 'wbcom_credits_refunded', array( __CLASS__, 'on_sdk_refunded' ), 10, 3 );
+    }
+
+    public static function on_sdk_topped_up( $slug, $user_id, $amount, $note = '' ) {
+        if ( self::SDK_SLUG !== $slug ) {
+            return; // ignore credit events for other consumer plugins
+        }
+        $balance = \Wbcom\Credits\Credits::get_balance( $slug, $user_id );
+        do_action( 'my_plugin_credits_added', $user_id, $amount, $balance );
+    }
+    // ... on_sdk_deducted, on_sdk_refunded follow the same shape
+}
+```
+
+Your other code (auto-resume, audit log, notifications, outgoing webhooks) hooks `my_plugin_credits_added` and gets the same payload no matter how the credits moved.
+
+> **Note:** `Credits::adjust()` does NOT fire any SDK action — it's the "raw ledger write" primitive. If you call `adjust()` for ad-hoc operations and need an event, fire your own action inline. The bridge can't help you there because the SDK can't (and shouldn't) infer event semantics from a generic balance adjustment.
+
+#### Pattern 2: Hold → Commit for Atomic Credit Operations
+
+When a credit deduction is tied to other write-side work (set post meta, apply perks, change post status, send an external API call), DO NOT call `Credits::deduct()` and then perform the side effects. If any side effect fails after the deduction, the credits are gone and the customer is left with a partially-applied transaction.
+
+**Use the two-phase pattern instead:**
+
+```php
+public function activate_premium_feature( int $user_id, int $item_id ) {
+    $cost = 10;
+
+    // Pre-check (cheap fail-fast before we touch the ledger).
+    if ( Credits::get_balance( 'my-plugin', $user_id ) < $cost ) {
+        return new \WP_Error( 'insufficient_credits', __( 'Top up to continue.' ) );
+    }
+
+    // Phase 1: reserve the credits. The ledger row makes the reservation
+    // visible to all readers so concurrent purchases can't double-spend.
+    $hold_id = Credits::hold( 'my-plugin', $user_id, $cost, $item_id, 'Premium activation' );
+    if ( ! $hold_id ) {
+        return new \WP_Error( 'hold_failed', __( 'Could not reserve credits.' ) );
+    }
+
+    try {
+        // Phase 2: perform write-side work.
+        update_post_meta( $item_id, '_premium_until', strtotime( '+30 days' ) );
+        $this->trigger_external_provisioning( $item_id ); // could throw
+        // ... etc.
+
+        // All side effects succeeded — commit the hold into a real
+        // deduction. Fires `wbcom_credits_deducted` → your bridge fires
+        // `my_plugin_credits_deducted` for downstream listeners.
+        Credits::deduct( 'my-plugin', $user_id, $cost, $item_id, 'Premium activation' );
+        return true;
+
+    } catch ( \Throwable $e ) {
+        // Any failure: release the reservation. The ledger preserves
+        // BOTH the hold AND the cancel_hold rows so a support agent
+        // can still trace the failed attempt.
+        Credits::cancel_hold( 'my-plugin', $user_id, $item_id );
+        return new \WP_Error( 'activation_failed', $e->getMessage() );
+    }
+}
+```
+
+**Why this matters:** without the hold/commit pattern your ledger ends up with deduct rows that don't correspond to delivered value. Vendors complain that they paid for a Featured listing perk and never got featured. With the pattern your ledger always shows `hold + deduct` (success) OR `hold + cancel_hold` (clean rollback) — never an orphan debit. The audit trail is complete.
+
+> **When NOT to use hold/commit:** truly one-shot operations with no side effects (admin claw-back, simple admin grant). Those can use `Credits::adjust()` or `Credits::topup()` directly. The hold/commit lifecycle is for transactions where side effects can fail independently of the credit write.
+
 ### Transaction History
 
 ```php
@@ -123,6 +247,10 @@ if ( $cost > 0 && $balance < $cost ) {
 
 ### Hooks — Listen for Credit Events
 
+**Read [Consumer Architecture Patterns](#consumer-architecture-patterns-read-this--every-consumer-plugin-needs-both) first** if you're planning to fan these out into your own plugin-namespaced actions — the bridge pattern is the right way to do it, and skipping it is the single most common reason auto-resume / audit / notifications break for paying customers.
+
+These actions fire on **every** ledger write — whether the writer was your wrapper, a bundled SDK adapter, a gateway webhook, or a direct `Credits::topup()` call. All listeners must slug-guard:
+
 ```php
 // After credits are topped up (e.g., send a confirmation email)
 add_action( 'wbcom_credits_topped_up', function ( $slug, $user_id, $amount, $note ) {
@@ -136,12 +264,28 @@ add_action( 'wbcom_credits_low', function ( $slug, $user_id, $balance ) {
     // Send low-balance email
 }, 10, 3 );
 
-// After deduction (item was approved)
+// After deduction (item was approved or paid for)
 add_action( 'wbcom_credits_deducted', function ( $slug, $user_id, $amount, $item_id ) {
     if ( 'my-plugin' !== $slug ) return;
     // Update post status, send notification
 }, 10, 4 );
+
+// After refund (held credits returned, e.g. on rejection)
+add_action( 'wbcom_credits_refunded', function ( $slug, $user_id, $item_id ) {
+    if ( 'my-plugin' !== $slug ) return;
+    // Restore post state, notify user
+}, 10, 3 );
 ```
+
+| Action | Args | Fires when |
+|---|---|---|
+| `wbcom_credits_topped_up` | `$slug, $user_id, $amount, $note` | `Credits::topup()` succeeds. ALSO fires for every SDK-adapter top-up (Woo / PMPro / MemberPress / WooSubscriptions / WooMemberships). |
+| `wbcom_credits_held` | `$slug, $user_id, $amount, $item_id` | `Credits::hold()` reserves credits. |
+| `wbcom_credits_deducted` | `$slug, $user_id, $amount, $item_id` | `Credits::deduct()` commits a hold into a permanent deduction. |
+| `wbcom_credits_refunded` | `$slug, $user_id, $item_id` | `Credits::refund()` returns held credits. |
+| `wbcom_credits_low` | `$slug, $user_id, $balance` | Balance crosses below the configured threshold after a write. |
+
+> `Credits::adjust()` does NOT fire any of these actions — it's the raw ledger write primitive. Direct adjust calls (admin claw-back, balance corrections) are silent. If you need an event for them, fire your own action inline at the callsite.
 
 ### Filters — Customize Behavior
 
