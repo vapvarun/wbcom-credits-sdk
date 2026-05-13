@@ -156,12 +156,43 @@ final class AdapterRegistry {
 		$option_key = $this->slug . '_credit_mappings';
 		$mappings   = get_option( $option_key, array() );
 
-		if ( ! is_array( $mappings ) ) {
+		if ( ! is_array( $mappings ) || empty( $mappings ) ) {
 			return 0;
 		}
 
-		$adapter_map = $mappings[ $adapter_id ] ?? array();
+		// Accept two storage shapes — consumer plugins picked their own
+		// canonical format historically and we don't force a migration:
+		//
+		//   1. Flat list (admin UIs that carry per-pack metadata like
+		//      price_cents, currency, label, badge):
+		//      [ [ 'adapter' => 'woocommerce', 'item_id' => 123, 'credits' => 10, ... ], ... ]
+		//
+		//   2. Nested map (the original SDK shape — compact, fast lookup):
+		//      [ 'woocommerce' => [ 123 => 10, ... ], ... ]
+		//
+		// Detect via the first row: flat rows have an `adapter` key.
+		// Mapping tables are typically small (≤ 20 rows per consumer)
+		// so the linear scan on the flat path is fine and avoids
+		// rebuilding a nested index on every lookup.
+		$first = reset( $mappings );
+		if ( is_array( $first ) && isset( $first['adapter'], $first['item_id'] ) ) {
+			foreach ( $mappings as $row ) {
+				if ( ! is_array( $row ) ) {
+					continue;
+				}
+				if ( (string) ( $row['adapter'] ?? '' ) !== $adapter_id ) {
+					continue;
+				}
+				if ( (string) ( $row['item_id'] ?? '' ) !== (string) $item_id ) {
+					continue;
+				}
+				return (int) ( $row['credits'] ?? 0 );
+			}
+			return 0;
+		}
 
+		// Nested-map shape — direct index lookup.
+		$adapter_map = $mappings[ $adapter_id ] ?? array();
 		return (int) ( $adapter_map[ $item_id ] ?? 0 );
 	}
 
