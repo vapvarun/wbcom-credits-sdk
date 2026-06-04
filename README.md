@@ -145,7 +145,7 @@ class Credit_System {
 
         add_action( 'wbcom_credits_topped_up', array( __CLASS__, 'on_sdk_topped_up' ), 10, 4 );
         add_action( 'wbcom_credits_deducted', array( __CLASS__, 'on_sdk_deducted' ), 10, 4 );
-        add_action( 'wbcom_credits_refunded', array( __CLASS__, 'on_sdk_refunded' ), 10, 3 );
+        add_action( 'wbcom_credits_refunded', array( __CLASS__, 'on_sdk_refunded' ), 10, 4 );
     }
 
     public static function on_sdk_topped_up( $slug, $user_id, $amount, $note = '' ) {
@@ -270,11 +270,17 @@ add_action( 'wbcom_credits_deducted', function ( $slug, $user_id, $amount, $item
     // Update post status, send notification
 }, 10, 4 );
 
-// After refund (held credits returned, e.g. on rejection)
-add_action( 'wbcom_credits_refunded', function ( $slug, $user_id, $item_id ) {
+// After refund (held credits returned, or a gateway refund revoked credits).
+// Since 1.4.0 the 3rd arg is the REFUNDED CREDIT AMOUNT (positive int) and the
+// 4th is a linkage-context map. The old item_id now lives in $context['item_id'].
+add_action( 'wbcom_credits_refunded', function ( $slug, $user_id, $amount, $context = array() ) {
     if ( 'my-plugin' !== $slug ) return;
-    // Restore post state, notify user
-}, 10, 3 );
+    // $amount  = credits revoked/returned.
+    // $context = [ 'reason' => 'hold_refund'|'gateway_refund', 'item_id' => int,
+    //              'ledger_id' => int, 'gateway' => ?string, 'session_id' => ?string,
+    //              'provider_ref' => ?string, 'note' => ?string ].
+    // Restore post state, notify user, reverse the matching perk.
+}, 10, 4 );
 ```
 
 | Action | Args | Fires when |
@@ -282,7 +288,7 @@ add_action( 'wbcom_credits_refunded', function ( $slug, $user_id, $item_id ) {
 | `wbcom_credits_topped_up` | `$slug, $user_id, $amount, $note` | `Credits::topup()` succeeds. ALSO fires for every SDK-adapter top-up (Woo / PMPro / MemberPress / WooSubscriptions / WooMemberships). |
 | `wbcom_credits_held` | `$slug, $user_id, $amount, $item_id` | `Credits::hold()` reserves credits. |
 | `wbcom_credits_deducted` | `$slug, $user_id, $amount, $item_id` | `Credits::deduct()` commits a hold into a permanent deduction. |
-| `wbcom_credits_refunded` | `$slug, $user_id, $item_id` | `Credits::refund()` returns held credits. |
+| `wbcom_credits_refunded` | `$slug, $user_id, $amount, $context` | `Credits::refund()` returns held credits OR a gateway refund (Stripe/PayPal `charge.refunded` / `PAYMENT.CAPTURE.REFUNDED`) revokes credits. **Since 1.4.0:** 3rd arg is the refunded credit amount (positive int); 4th arg `$context` carries `reason`, `item_id`, `ledger_id`, and (for gateway refunds) `gateway`, `session_id`, `provider_ref`. Additive — 3-arg listeners still work — but the 3rd arg changed meaning from `item_id` to the amount. |
 | `wbcom_credits_low` | `$slug, $user_id, $balance` | Balance crosses below the configured threshold after a write. |
 
 > `Credits::adjust()` does NOT fire any of these actions — it's the raw ledger write primitive. Direct adjust calls (admin claw-back, balance corrections) are silent. If you need an event for them, fire your own action inline at the callsite.

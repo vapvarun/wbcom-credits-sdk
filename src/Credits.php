@@ -234,16 +234,31 @@ final class Credits {
 		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'refund', abs( $amount ), $item_id, $note );
 
 		if ( $result ) {
+			$context = array(
+				'item_id'   => $item_id,
+				'ledger_id' => (int) $result,
+				'note'      => $note,
+				'reason'    => 'hold_refund',
+			);
 			/**
 			 * Fires after credits are refunded.
 			 *
-			 * @since 1.0.0
+			 * Signature (since 1.4.0): ($slug, $user_id, $amount, $context). The
+			 * 3rd arg is the REFUNDED CREDIT COUNT (a positive int); the original
+			 * `$item_id` now lives in $context['item_id']. The 4th arg is additive
+			 * (existing 3-arg listeners keep working), but the 3rd arg changed
+			 * meaning from item_id to the credit amount so the contract is
+			 * consistent with the gateway-initiated refund path.
 			 *
-			 * @param string $slug    Plugin slug.
-			 * @param int    $user_id WordPress user ID.
-			 * @param int    $item_id Item ID.
+			 * @since 1.0.0
+			 * @since 1.4.0 3rd arg is the refunded credit amount; 4th arg ($context) added.
+			 *
+			 * @param string               $slug    Plugin slug.
+			 * @param int                  $user_id WordPress user ID.
+			 * @param int                  $amount  Credits refunded (positive int).
+			 * @param array<string, mixed> $context Linkage context: item_id, ledger_id, note, reason.
 			 */
-			do_action( 'wbcom_credits_refunded', $slug, $user_id, $item_id );
+			do_action( 'wbcom_credits_refunded', $slug, $user_id, abs( $amount ), $context );
 		}
 
 		return $result;

@@ -10,6 +10,8 @@ declare( strict_types=1 );
 
 namespace Wbcom\Credits\Adapters;
 
+use Wbcom\Credits\Gateways\Processed_Events;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -90,7 +92,17 @@ final class WooMembershipsAdapter implements AdapterInterface {
 	 * Handle membership status changes.
 	 *
 	 * Awards credits when a membership transitions to an active status.
-	 * Uses a meta flag on the membership to prevent double-processing.
+	 *
+	 * Double-processing is guarded by an ATOMIC claim, not a post-meta flag.
+	 * Membership status can flip to active from multiple concurrent paths
+	 * (admin save + gateway callback). The previous read-then-write post-meta
+	 * flag (`get_post_meta()` … `update_post_meta()`) has a TOCTOU window where
+	 * two deliveries both read "not processed" and both top up.
+	 * {@see Processed_Events::claim()} is a UNIQUE `INSERT IGNORE` that returns
+	 * true for exactly one delivery. The claim is keyed per MEMBERSHIP, which
+	 * preserves the original "credit once, ever, per membership" semantics —
+	 * a later active→expired→active cycle stays a no-op exactly as before,
+	 * because the membership-id claim row persists.
 	 *
 	 * @since 1.0.0
 	 *
@@ -107,16 +119,16 @@ final class WooMembershipsAdapter implements AdapterInterface {
 
 		$membership_id = $membership->get_id();
 
-		// Prevent double-processing.
-		$processed = get_post_meta( $membership_id, '_wbcom_credits_processed', true );
-		if ( $processed ) {
-			return;
-		}
-
 		$user_id = $membership->get_user_id();
 		$plan_id = $membership->get_plan_id();
 
 		if ( ! $user_id || ! $plan_id ) {
+			return;
+		}
+
+		// Atomic dedupe: claim BEFORE crediting. Keyed per membership so the
+		// award is once-ever (unchanged behaviour), but now race-safe.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woomembership:membership:' . $membership_id ) ) {
 			return;
 		}
 
@@ -134,6 +146,7 @@ final class WooMembershipsAdapter implements AdapterInterface {
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
 		}
 
+		// Legacy marker for support / reconciliation only; no longer the guard.
 		update_post_meta( $membership_id, '_wbcom_credits_processed', '1' );
 	}
 

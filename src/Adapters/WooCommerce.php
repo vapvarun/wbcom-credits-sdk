@@ -10,6 +10,8 @@ declare( strict_types=1 );
 
 namespace Wbcom\Credits\Adapters;
 
+use Wbcom\Credits\Gateways\Processed_Events;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -97,7 +99,17 @@ final class WooCommerceAdapter implements AdapterInterface {
 	 * Handle a completed WooCommerce order.
 	 *
 	 * Iterates over order items, looks up credit mappings, and tops up the
-	 * customer's credit balance. Uses a meta flag to prevent double-processing.
+	 * customer's credit balance.
+	 *
+	 * Double-processing is guarded by an ATOMIC claim, not an order-meta flag.
+	 * Both `woocommerce_order_status_completed` and `_status_processing` fire
+	 * for the same order, and Woo can dispatch the same status transition from
+	 * concurrent requests (webhook + admin, or two payment IPNs). A read-then-
+	 * write meta flag (`get_meta()` … `save()`) has a TOCTOU window: two
+	 * deliveries can both read "not processed" before either saves, and both
+	 * top up. {@see Processed_Events::claim()} is a UNIQUE `INSERT IGNORE`
+	 * that returns true for exactly one of N racing deliveries — so we claim
+	 * FIRST and only credit when we won the claim.
 	 *
 	 * @since 1.0.0
 	 *
@@ -111,11 +123,6 @@ final class WooCommerceAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Prevent double-processing.
-		if ( $order->get_meta( '_wbcom_credits_processed' ) ) {
-			return;
-		}
-
 		// Skip subscription orders — handled by WooSubscriptions adapter.
 		if ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order ) ) {
 			return;
@@ -123,6 +130,14 @@ final class WooCommerceAdapter implements AdapterInterface {
 
 		$user_id = $order->get_customer_id();
 		if ( ! $user_id ) {
+			return;
+		}
+
+		// Atomic dedupe: claim BEFORE crediting. A stable per-order event id
+		// keyed under this adapter's slug + an adapter-tagged gateway means a
+		// second delivery of the same order (or the processing→completed pair)
+		// loses the claim and exits without crediting again.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woo:order:' . $order_id ) ) {
 			return;
 		}
 
@@ -149,6 +164,9 @@ final class WooCommerceAdapter implements AdapterInterface {
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
 		}
 
+		// Keep the legacy meta flag as a human-readable marker for support /
+		// reconciliation. It is NO LONGER the dedupe guard — the atomic claim
+		// above is — so a save() failure here cannot cause a double top-up.
 		$order->update_meta_data( '_wbcom_credits_processed', '1' );
 		$order->save();
 	}

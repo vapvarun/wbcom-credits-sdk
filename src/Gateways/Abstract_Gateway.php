@@ -220,22 +220,38 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		// Credits::adjust(), which intentionally does NOT fire SDK actions,
 		// so without this the documented `wbcom_credits_refunded` contract
 		// would be silently skipped for every Stripe/PayPal refund. We only
-		// fire when credits were actually revoked. The payload matches the
-		// documented 3-arg contract ($slug, $user_id, $item_id); gateway
-		// refunds are not item-scoped, so item_id is 0.
+		// fire when credits were actually revoked.
+		//
+		// Signature (since 1.4.0): ($slug, $user_id, $amount, $context). The
+		// 3rd arg carries the REVOKED CREDIT COUNT (a positive int) and the
+		// 4th a linkage-context map so Pro consumers can attribute the refund
+		// to a ledger row / listing and reverse the right perk. The 4th arg is
+		// additive — existing 3-arg listeners keep working — but note the 3rd
+		// arg is now the amount, not item_id (item_id moved into $context).
 		if ( $credits_to_revoke > 0 ) {
+			$context = array(
+				'gateway'      => $this->get_id(),
+				'session_id'   => $event->session_id,
+				'provider_ref' => $event->provider_ref,
+				'ledger_id'    => (int) $ledger_id,
+				'reason'       => 'gateway_refund',
+				'item_id'      => 0,
+			);
 			/**
 			 * Fires after credits are refunded. Mirrors {@see \Wbcom\Credits\Credits::refund()}
 			 * so consumer event bridges see gateway-initiated refunds identically
 			 * to hold-lifecycle refunds.
 			 *
 			 * @since 1.0.0
+			 * @since 1.4.0 3rd arg is the revoked credit amount; 4th arg ($context) added.
 			 *
-			 * @param string $slug    Plugin slug.
-			 * @param int    $user_id WordPress user ID.
-			 * @param int    $item_id Item ID (0 for gateway-initiated refunds).
+			 * @param string               $slug    Plugin slug.
+			 * @param int                  $user_id WordPress user ID.
+			 * @param int                  $amount  Credits revoked (positive int).
+			 * @param array<string, mixed> $context Linkage context: gateway, session_id,
+			 *                                       provider_ref, ledger_id, reason, item_id.
 			 */
-			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], 0 );
+			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $credits_to_revoke, $context );
 		}
 
 		/**

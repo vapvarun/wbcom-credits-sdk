@@ -101,11 +101,11 @@ final class GatewayRefundEventTest extends TestCase {
 		$fired = array();
 		add_action(
 			'wbcom_credits_refunded',
-			static function ( $slug, $user_id, $item_id ) use ( &$fired ): void {
-				$fired[] = array( $slug, $user_id, $item_id );
+			static function ( $slug, $user_id, $amount, $context = array() ) use ( &$fired ): void {
+				$fired[] = array( $slug, $user_id, $amount, $context );
 			},
 			10,
-			3
+			4
 		);
 
 		$gateway  = new Test_Gateway();
@@ -114,7 +114,19 @@ final class GatewayRefundEventTest extends TestCase {
 		self::assertSame( 200, $response->get_status() );
 		self::assertSame( 100, $response->get_data()['credits_revoked'] );
 		self::assertCount( 1, $fired, 'Generic wbcom_credits_refunded must fire exactly once.' );
-		self::assertSame( array( self::SLUG, 7, 0 ), $fired[0], 'Payload must match the documented (slug, user_id, item_id) contract; item_id is 0 for gateway refunds.' );
+
+		// New 4-arg contract: ($slug, $user_id, $amount, $context). The 3rd arg
+		// is the REVOKED CREDIT COUNT, not item_id.
+		self::assertSame( self::SLUG, $fired[0][0] );
+		self::assertSame( 7, $fired[0][1] );
+		self::assertSame( 100, $fired[0][2], '3rd arg must be the revoked credit amount.' );
+		self::assertIsArray( $fired[0][3] );
+		self::assertSame( 'teststripe', $fired[0][3]['gateway'] );
+		self::assertSame( 'cs_test_1', $fired[0][3]['session_id'] );
+		self::assertSame( 'gateway_refund', $fired[0][3]['reason'] );
+		self::assertArrayHasKey( 'ledger_id', $fired[0][3] );
+		self::assertArrayHasKey( 'provider_ref', $fired[0][3] );
+		self::assertSame( 0, $fired[0][3]['item_id'], 'Gateway refunds are not item-scoped.' );
 
 		// Credits revoked: balance back to 0.
 		self::assertSame( 0, Credits::get_balance( self::SLUG, 7 ) );
@@ -128,7 +140,7 @@ final class GatewayRefundEventTest extends TestCase {
 				$count++;
 			},
 			10,
-			3
+			4
 		);
 
 		$gateway = new Test_Gateway();
@@ -145,11 +157,11 @@ final class GatewayRefundEventTest extends TestCase {
 		$fired = array();
 		add_action(
 			'wbcom_credits_refunded',
-			static function ( $slug, $user_id, $item_id ) use ( &$fired ): void {
-				$fired[] = array( $slug, $user_id, $item_id );
+			static function ( $slug, $user_id, $amount, $context = array() ) use ( &$fired ): void {
+				$fired[] = array( $slug, $user_id, $amount, $context );
 			},
 			10,
-			3
+			4
 		);
 
 		// Refund $4.00 of the $10.00 / 100-credit checkout → revoke 40 credits.
@@ -158,7 +170,10 @@ final class GatewayRefundEventTest extends TestCase {
 
 		self::assertSame( 40, $response->get_data()['credits_revoked'] );
 		self::assertCount( 1, $fired, 'Partial refund must fire the generic action exactly once.' );
-		self::assertSame( array( self::SLUG, 7, 0 ), $fired[0] );
+		self::assertSame( self::SLUG, $fired[0][0] );
+		self::assertSame( 7, $fired[0][1] );
+		self::assertSame( 40, $fired[0][2], 'Partial refund must report the prorated revoked amount.' );
+		self::assertSame( 'gateway_refund', $fired[0][3]['reason'] );
 		self::assertSame( 60, Credits::get_balance( self::SLUG, 7 ), 'Balance must reflect the prorated revoke (100 - 40).' );
 	}
 }

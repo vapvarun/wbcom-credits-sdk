@@ -11,6 +11,12 @@
         <testsuite name="gateways">
             <directory>tests/Gateways</directory>
         </testsuite>
+        <testsuite name="adapters">
+            <directory>tests/Adapters</directory>
+        </testsuite>
+        <testsuite name="credits">
+            <directory>tests/Credits</directory>
+        </testsuite>
         <testsuite name="versions">
             <directory>tests/Versions</directory>
         </testsuite>

@@ -10,6 +10,8 @@ declare( strict_types=1 );
 
 namespace Wbcom\Credits\Adapters;
 
+use Wbcom\Credits\Gateways\Processed_Events;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -127,6 +129,16 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 	/**
 	 * Process a subscription payment event and top up credits.
 	 *
+	 * Dedupe is via an ATOMIC claim, not an order-meta flag. The initial-
+	 * payment and renewal-payment hooks can both resolve to the same order,
+	 * and a renewal IPN can be delivered concurrently with a manual "process
+	 * renewal" admin action. A read-then-write meta flag has a TOCTOU window
+	 * where two deliveries both read "not processed" and both top up. The
+	 * claim is keyed per ORDER (each renewal is its own order, so every billing
+	 * period still credits exactly once) under this adapter's slug + an
+	 * adapter-tagged gateway. {@see Processed_Events::claim()} returns true for
+	 * exactly one of N racing deliveries.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param \WC_Subscription $subscription The subscription object.
@@ -141,13 +153,16 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 
 		$order_id = $order->get_id();
 
-		// Prevent double-processing.
-		if ( $order->get_meta( '_wbcom_sub_credits_processed' ) ) {
+		$user_id = $order->get_customer_id();
+		if ( ! $user_id ) {
 			return;
 		}
 
-		$user_id = $order->get_customer_id();
-		if ( ! $user_id ) {
+		// Atomic dedupe: claim BEFORE crediting. Keyed per order so each
+		// renewal order credits once, but a duplicate delivery of the same
+		// order (initial+renewal hook overlap, or concurrent IPNs) loses the
+		// claim and exits.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woosub:order:' . $order_id ) ) {
 			return;
 		}
 
@@ -175,6 +190,7 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
 		}
 
+		// Legacy marker for support / reconciliation only; no longer the guard.
 		$order->update_meta_data( '_wbcom_sub_credits_processed', '1' );
 		$order->save();
 	}
