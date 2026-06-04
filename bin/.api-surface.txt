@@ -126,12 +126,12 @@ Gateways/Stripe.php:257 — 	public function refund( string $slug, string $sessi
 Gateways/Transaction_Log.php:35 — 	public const KIND_CHECKOUT = 'checkout';
 Gateways/Transaction_Log.php:36 — 	public const KIND_REFUND   = 'refund';
 Gateways/Transaction_Log.php:44 — 	public static function table_name( string $prefix ): string {
-Gateways/Transaction_Log.php:55 — 	public static function maybe_create_table( string $prefix ): void {
-Gateways/Transaction_Log.php:101 — 	public static function insert_checkout( array $row ): int {
-Gateways/Transaction_Log.php:134 — 	public static function insert_refund( array $row ): int {
-Gateways/Transaction_Log.php:162 — 	public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array {
-Gateways/Transaction_Log.php:192 — 	public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array {
-Gateways/Transaction_Log.php:220 — 	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
+Gateways/Transaction_Log.php:70 — 	public static function maybe_create_table( string $prefix ): void {
+Gateways/Transaction_Log.php:152 — 	public static function insert_checkout( array $row ): int {
+Gateways/Transaction_Log.php:185 — 	public static function insert_refund( array $row ): int {
+Gateways/Transaction_Log.php:213 — 	public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array {
+Gateways/Transaction_Log.php:243 — 	public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array {
+Gateways/Transaction_Log.php:271 — 	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
 Gateways/Webhook_Controller.php:43 — 	public function __construct( string $slug ) {
 Gateways/Webhook_Controller.php:50 — 	public function register_routes(): void {
 Gateways/Webhook_Controller.php:110 — 	public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
@@ -151,7 +151,7 @@ Registry.php:93 — 	public function get( string $slug ): ?array {
 Registry.php:103 — 	public function get_slugs(): array {
 Registry.php:113 — 	public function get_all(): array {
 Registry.php:123 — 	public function boot_all(): void {
-Registry.php:222 — 	public static function instance(): self {
+Registry.php:231 — 	public static function instance(): self {
 REST.php:59 — 	public function __construct( string $slug, string $prefix, string $user_type ) {
 REST.php:71 — 	public function register_routes(): void {
 REST.php:152 — 	public function get_balance( \WP_REST_Request $request ): \WP_REST_Response {

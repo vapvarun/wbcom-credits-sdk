@@ -47,7 +47,22 @@ final class Transaction_Log {
 	}
 
 	/**
-	 * Create the table if it doesn't exist. Called from Registry::boot_all().
+	 * Create the table if it doesn't exist, then ensure the v2 schema is
+	 * present on EXISTING installs. Called from Registry::boot_all() behind
+	 * the {@see Registry::maybe_upgrade_schema()} version gate.
+	 *
+	 * Two distinct paths:
+	 *   - Fresh install: the table is missing, so the full CREATE TABLE below
+	 *     (which already declares `payment_intent` + the idx_intent key) runs.
+	 *   - Existing install (v1 → v2 upgrade): the table is already present, so
+	 *     CREATE TABLE is skipped — but the v1 table predates the
+	 *     `payment_intent` column the Stripe refund-linkage fix relies on.
+	 *     {@see ensure_intent_column()} additively backfills the column + index
+	 *     so the upgrade actually lands on existing data, not just fresh sites.
+	 *
+	 * The column-add runs UNCONDITIONALLY (after the create), is idempotent
+	 * (SHOW COLUMNS guard), and never errors when the column already exists, so
+	 * it is safe on both paths and safe to re-run.
 	 *
 	 * @param string $prefix Consumer prefix.
 	 * @return void
@@ -56,36 +71,72 @@ final class Transaction_Log {
 		global $wpdb;
 		$table  = self::table_name( $prefix );
 		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		if ( $table === $exists ) {
-			return;
+		if ( $table !== $exists ) {
+			require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+			$charset = $wpdb->get_charset_collate();
+			$sql     = "CREATE TABLE {$table} (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+				slug VARCHAR(64) NOT NULL,
+				gateway VARCHAR(32) NOT NULL,
+				kind VARCHAR(16) NOT NULL,
+				session_id VARCHAR(191) NOT NULL,
+				payment_intent VARCHAR(191) NOT NULL DEFAULT '',
+				event_id VARCHAR(191) NOT NULL,
+				user_id BIGINT UNSIGNED NOT NULL,
+				credits BIGINT NOT NULL DEFAULT 0,
+				amount_cents BIGINT NOT NULL DEFAULT 0,
+				refunded_cents BIGINT NOT NULL DEFAULT 0,
+				currency VARCHAR(8) NOT NULL DEFAULT 'USD',
+				ledger_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+				parent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (id),
+				KEY idx_session (slug, gateway, session_id),
+				KEY idx_intent (slug, gateway, payment_intent),
+				KEY idx_event (slug, gateway, event_id),
+				KEY idx_user (slug, user_id)
+			) {$charset};";
+			dbDelta( $sql );
 		}
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-		$charset = $wpdb->get_charset_collate();
-		$sql     = "CREATE TABLE {$table} (
-			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-			slug VARCHAR(64) NOT NULL,
-			gateway VARCHAR(32) NOT NULL,
-			kind VARCHAR(16) NOT NULL,
-			session_id VARCHAR(191) NOT NULL,
-			payment_intent VARCHAR(191) NOT NULL DEFAULT '',
-			event_id VARCHAR(191) NOT NULL,
-			user_id BIGINT UNSIGNED NOT NULL,
-			credits BIGINT NOT NULL DEFAULT 0,
-			amount_cents BIGINT NOT NULL DEFAULT 0,
-			refunded_cents BIGINT NOT NULL DEFAULT 0,
-			currency VARCHAR(8) NOT NULL DEFAULT 'USD',
-			ledger_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
-			parent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
-			KEY idx_session (slug, gateway, session_id),
-			KEY idx_intent (slug, gateway, payment_intent),
-			KEY idx_event (slug, gateway, event_id),
-			KEY idx_user (slug, user_id)
-		) {$charset};";
-		// dbDelta brings an existing table up to this definition (adds the
-		// payment_intent column + idx_intent key) on the schema-version bump.
-		dbDelta( $sql );
+
+		// SCHEMA v2 backfill — runs for both fresh and existing tables.
+		// dbDelta does NOT reliably add a column to an existing table when the
+		// CREATE TABLE path above was skipped, and it is notoriously unreliable
+		// at adding plain (non-PRIMARY/UNIQUE) KEYs. For money code we prefer an
+		// explicit, idempotent ALTER over trusting dbDelta's diffing.
+		self::ensure_intent_column( $table );
+	}
+
+	/**
+	 * Idempotently ensure the `payment_intent` column + its idx_intent index
+	 * exist on an already-created gateway-log table.
+	 *
+	 * Fresh installs already have both (declared in the CREATE TABLE above), so
+	 * the SHOW COLUMNS probe short-circuits with zero writes. Existing v1
+	 * installs are missing both, so this adds them with a column type matching
+	 * the fresh schema (VARCHAR(191) NOT NULL DEFAULT '') and the same composite
+	 * index (slug, gateway, payment_intent). Re-running is a no-op.
+	 *
+	 * @param string $table Fully-qualified table name.
+	 * @return void
+	 */
+	private static function ensure_intent_column( string $table ): void {
+		global $wpdb;
+
+		$has_column = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", 'payment_intent' ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		);
+		if ( null === $has_column ) {
+			// Match the fresh CREATE TABLE column definition exactly.
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN payment_intent VARCHAR(191) NOT NULL DEFAULT '' AFTER session_id" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		$has_index = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare( "SHOW INDEX FROM `{$table}` WHERE Key_name = %s", 'idx_intent' ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		);
+		if ( null === $has_index ) {
+			$wpdb->query( "ALTER TABLE `{$table}` ADD KEY idx_intent (slug, gateway, payment_intent)" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		}
 	}
 
 	/**

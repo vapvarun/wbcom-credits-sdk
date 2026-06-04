@@ -169,12 +169,21 @@ final class Registry {
 	 * History:
 	 *  - 1: ledger + gateway transaction-log tables (SDK 1.2.0).
 	 *  - 2: added {prefix}_credit_processed_events with UNIQUE(slug,gateway,
-	 *       event_id) for atomic webhook dedupe (SDK 1.3.1).
+	 *       event_id) for atomic webhook dedupe. This version ALSO intended to
+	 *       add the gateway-log `payment_intent` column + idx_intent index, but
+	 *       a bug made Transaction_Log::maybe_create_table() early-return on
+	 *       existing tables, so the column was added on FRESH installs only.
+	 *       Sites that booted that build are stuck at version 2 WITHOUT the
+	 *       column — the gate believes the work is done.
+	 *  - 3: re-runs the now-fixed idempotent backfill so installs corrupted by
+	 *       the v2 bug (version=2, no payment_intent column) get the column +
+	 *       idx_intent index added. The backfill is a no-op where they already
+	 *       exist (fresh installs), so bumping the version is safe for everyone.
 	 *
 	 * @since 1.3.1
 	 * @var int
 	 */
-	private const SCHEMA_VERSION = 2;
+	private const SCHEMA_VERSION = 3;
 
 	/**
 	 * Create or upgrade the per-consumer schema, guarded by a stored

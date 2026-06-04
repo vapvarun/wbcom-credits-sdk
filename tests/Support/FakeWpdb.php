@@ -52,6 +52,24 @@ final class FakeWpdb {
 	 */
 	public array $column_defaults = array();
 
+	/**
+	 * Declared column names per table, parsed from CREATE TABLE and updated by
+	 * ALTER TABLE ADD COLUMN. Lets SHOW COLUMNS report the real DDL state so
+	 * the schema-upgrade backfill (ensure_intent_column) exercises both the
+	 * "column already present" and "column missing" branches like MySQL.
+	 *
+	 * @var array<string, array<int, string>>
+	 */
+	public array $table_columns = array();
+
+	/**
+	 * Declared index key-names per table, parsed from CREATE TABLE and updated
+	 * by ALTER TABLE ADD KEY. Backs SHOW INDEX.
+	 *
+	 * @var array<string, array<int, string>>
+	 */
+	public array $table_indexes = array();
+
 	public function get_charset_collate(): string {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
@@ -80,6 +98,19 @@ final class FakeWpdb {
 	public function get_var( string $sql ): mixed {
 		if ( preg_match( "/SHOW TABLES LIKE '([^']+)'/i", $sql, $m ) ) {
 			return isset( $this->tables[ $m[1] ] ) ? $m[1] : null;
+		}
+		// SHOW COLUMNS FROM `table` LIKE 'col' — returns the Field name when the
+		// column exists (get_var reads the first column of the first row), null
+		// otherwise. Mirrors the ensure_intent_column() probe.
+		if ( preg_match( "/SHOW COLUMNS FROM\s+`?([^`\s]+)`?\s+LIKE\s+'([^']*)'/i", $sql, $m ) ) {
+			$cols = $this->table_columns[ $m[1] ] ?? array();
+			return in_array( $m[2], $cols, true ) ? $m[2] : null;
+		}
+		// SHOW INDEX FROM `table` WHERE Key_name = 'name' — returns the table
+		// name (non-null) when the index exists, null otherwise.
+		if ( preg_match( "/SHOW INDEX FROM\s+`?([^`\s]+)`?\s+WHERE\s+Key_name\s*=\s*'([^']*)'/i", $sql, $m ) ) {
+			$idx = $this->table_indexes[ $m[1] ] ?? array();
+			return in_array( $m[2], $idx, true ) ? $m[1] : null;
 		}
 		// Existence pre-check used by Processed_Events::exists():
 		//   SELECT id FROM <table> WHERE slug='..' AND gateway='..' AND event_id='..' LIMIT 1
@@ -204,6 +235,33 @@ final class FakeWpdb {
 			return 1;
 		}
 
+		// ALTER TABLE `t` ADD COLUMN <name> ... — record the new column so a
+		// subsequent SHOW COLUMNS sees it (idempotency of the backfill).
+		if ( preg_match( '/ALTER TABLE\s+`?([^`\s]+)`?\s+ADD COLUMN\s+(\w+)/i', $sql, $m ) ) {
+			$table = $m[1];
+			$col   = $m[2];
+			if ( ! in_array( $col, $this->table_columns[ $table ] ?? array(), true ) ) {
+				$this->table_columns[ $table ][] = $col;
+			}
+			// Capture a DEFAULT so insert() mirrors it (e.g. NOT NULL DEFAULT '').
+			if ( preg_match( "/DEFAULT\s+'([^']*)'/i", $sql, $dm ) ) {
+				$this->column_defaults[ $table ][ $col ] = $dm[1];
+			}
+			$this->rows_affected = 0;
+			return 0;
+		}
+
+		// ALTER TABLE `t` ADD KEY <name> (...) — record the new index.
+		if ( preg_match( '/ALTER TABLE\s+`?([^`\s]+)`?\s+ADD KEY\s+(\w+)/i', $sql, $m ) ) {
+			$table = $m[1];
+			$idx   = $m[2];
+			if ( ! in_array( $idx, $this->table_indexes[ $table ] ?? array(), true ) ) {
+				$this->table_indexes[ $table ][] = $idx;
+			}
+			$this->rows_affected = 0;
+			return 0;
+		}
+
 		if ( preg_match( '/UPDATE\s+(\S+)\s+SET\s+refunded_cents\s*=\s*refunded_cents\s*\+\s*(\d+)\s+WHERE\s+id=(\d+)/i', $sql, $m ) ) {
 			$table = $m[1];
 			$delta = (int) $m[2];
@@ -307,6 +365,20 @@ final class FakeWpdb {
 			if ( ! isset( $this->tables[ $table ] ) ) {
 				$this->tables[ $table ] = array();
 			}
+			// Capture declared column names + KEY names from the CREATE TABLE
+			// body so SHOW COLUMNS / SHOW INDEX report the real DDL state.
+			if ( preg_match( '/CREATE TABLE\s+\S+\s*\((.*)\)\s*[^)]*$/is', $stmt, $bm ) ) {
+				foreach ( preg_split( '/,\s*\n/', $bm[1] ) as $line ) {
+					$line = trim( $line );
+					if ( preg_match( '/^(PRIMARY KEY|UNIQUE KEY|KEY|INDEX)\s+(\w+)?/i', $line, $km ) ) {
+						if ( ! empty( $km[2] ) ) {
+							$this->table_indexes[ $table ][] = $km[2];
+						}
+					} elseif ( preg_match( '/^(\w+)\s+[A-Za-z]/', $line, $cm ) ) {
+						$this->table_columns[ $table ][] = $cm[1];
+					}
+				}
+			}
 			// Capture UNIQUE KEY declarations so INSERT IGNORE enforces them.
 			if ( preg_match_all( '/UNIQUE KEY\s+\w+\s*\(([^)]+)\)/i', $stmt, $um, PREG_SET_ORDER ) ) {
 				foreach ( $um as $u ) {
@@ -333,6 +405,8 @@ final class FakeWpdb {
 		$this->create_table_sql = array();
 		$this->unique_keys      = array();
 		$this->column_defaults  = array();
+		$this->table_columns    = array();
+		$this->table_indexes    = array();
 		$this->rows_affected    = 0;
 		$this->insert_id        = 0;
 	}
