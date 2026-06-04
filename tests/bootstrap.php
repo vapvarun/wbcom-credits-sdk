@@ -20,6 +20,17 @@ if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
 	define( 'MINUTE_IN_SECONDS', 60 );
 }
 
+// $wpdb output-format constants used by get_row()/get_results().
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+if ( ! defined( 'ARRAY_N' ) ) {
+	define( 'ARRAY_N', 'ARRAY_N' );
+}
+if ( ! defined( 'OBJECT' ) ) {
+	define( 'OBJECT', 'OBJECT' );
+}
+
 // In-memory option store used by the helpers under test.
 global $wbcom_credits_test_options;
 $wbcom_credits_test_options = array();
@@ -280,13 +291,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/' );
 }
 
+// Shared $wpdb for table-backed helpers (Processed_Events, Transaction_Log,
+// Ledger). Individual tests may replace it with a fresh FakeWpdb in setUp().
+global $wpdb;
+$wpdb = new \Wbcom\Credits\Tests\Support\FakeWpdb();
+
 // Load classes under test. The SDK loader is pure PHP — no WP needed.
-require_once __DIR__ . '/../src/Gateways/Idempotency.php';
-require_once __DIR__ . '/../src/Gateways/Pending_Checkouts.php';
-require_once __DIR__ . '/../src/Gateways/Signature_Verifier.php';
-require_once __DIR__ . '/../src/Gateways/Gateway_Event.php';
 require_once __DIR__ . '/../src/Versions.php';
 require_once __DIR__ . '/../src/Ledger.php';
 require_once __DIR__ . '/../src/Credits.php';
 require_once __DIR__ . '/../src/Registry.php';
+require_once __DIR__ . '/../src/Gateways/GatewayInterface.php';
+require_once __DIR__ . '/../src/Gateways/Gateway_Event.php';
+require_once __DIR__ . '/../src/Gateways/Processed_Events.php';
+require_once __DIR__ . '/../src/Gateways/Idempotency.php';
+require_once __DIR__ . '/../src/Gateways/Pending_Checkouts.php';
+require_once __DIR__ . '/../src/Gateways/Signature_Verifier.php';
+require_once __DIR__ . '/../src/Gateways/Transaction_Log.php';
+require_once __DIR__ . '/../src/Gateways/Abstract_Gateway.php';
+require_once __DIR__ . '/../src/Gateways/Stripe.php';
 require_once __DIR__ . '/../src/Gateways/Pricing.php';

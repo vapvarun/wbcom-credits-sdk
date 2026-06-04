@@ -67,6 +67,7 @@ final class Transaction_Log {
 			gateway VARCHAR(32) NOT NULL,
 			kind VARCHAR(16) NOT NULL,
 			session_id VARCHAR(191) NOT NULL,
+			payment_intent VARCHAR(191) NOT NULL DEFAULT '',
 			event_id VARCHAR(191) NOT NULL,
 			user_id BIGINT UNSIGNED NOT NULL,
 			credits BIGINT NOT NULL DEFAULT 0,
@@ -78,9 +79,12 @@ final class Transaction_Log {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id),
 			KEY idx_session (slug, gateway, session_id),
+			KEY idx_intent (slug, gateway, payment_intent),
 			KEY idx_event (slug, gateway, event_id),
 			KEY idx_user (slug, user_id)
 		) {$charset};";
+		// dbDelta brings an existing table up to this definition (adds the
+		// payment_intent column + idx_intent key) on the schema-version bump.
 		dbDelta( $sql );
 	}
 
@@ -89,7 +93,8 @@ final class Transaction_Log {
 	 *
 	 * @param array{
 	 *     slug:string, gateway:string, session_id:string, event_id:string,
-	 *     user_id:int, credits:int, amount_cents:int, currency:string, ledger_id:int
+	 *     user_id:int, credits:int, amount_cents:int, currency:string, ledger_id:int,
+	 *     payment_intent?:string
 	 * } $row Row data.
 	 * @return int Newly inserted row id (0 on failure).
 	 */
@@ -99,18 +104,19 @@ final class Transaction_Log {
 		$ok    = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$table,
 			array(
-				'slug'         => sanitize_key( (string) ( $row['slug'] ?? '' ) ),
-				'gateway'      => sanitize_key( (string) ( $row['gateway'] ?? '' ) ),
-				'kind'         => self::KIND_CHECKOUT,
-				'session_id'   => (string) ( $row['session_id'] ?? '' ),
-				'event_id'     => (string) ( $row['event_id'] ?? '' ),
-				'user_id'      => (int) ( $row['user_id'] ?? 0 ),
-				'credits'      => (int) ( $row['credits'] ?? 0 ),
-				'amount_cents' => (int) ( $row['amount_cents'] ?? 0 ),
-				'currency'     => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
-				'ledger_id'    => (int) ( $row['ledger_id'] ?? 0 ),
+				'slug'           => sanitize_key( (string) ( $row['slug'] ?? '' ) ),
+				'gateway'        => sanitize_key( (string) ( $row['gateway'] ?? '' ) ),
+				'kind'           => self::KIND_CHECKOUT,
+				'session_id'     => (string) ( $row['session_id'] ?? '' ),
+				'payment_intent' => (string) ( $row['payment_intent'] ?? '' ),
+				'event_id'       => (string) ( $row['event_id'] ?? '' ),
+				'user_id'        => (int) ( $row['user_id'] ?? 0 ),
+				'credits'        => (int) ( $row['credits'] ?? 0 ),
+				'amount_cents'   => (int) ( $row['amount_cents'] ?? 0 ),
+				'currency'       => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
+				'ledger_id'      => (int) ( $row['ledger_id'] ?? 0 ),
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
 	}
@@ -163,6 +169,39 @@ final class Transaction_Log {
 				sanitize_key( $gateway ),
 				self::KIND_CHECKOUT,
 				$session_id
+			),
+			ARRAY_A
+		);
+		return is_array( $row ) ? $row : null;
+	}
+
+	/**
+	 * Find the checkout row for a given gateway payment-intent reference.
+	 *
+	 * Secondary refund-linkage path: a provider refund event may carry only
+	 * the payment-intent id (Stripe pi_...), not the checkout session id the
+	 * parent row is keyed by. This resolves the parent via the
+	 * payment_intent stored at checkout time. Used only as a fallback when
+	 * the session id is not directly available on the refund event.
+	 *
+	 * @param string $slug
+	 * @param string $gateway
+	 * @param string $payment_intent Provider payment-intent id.
+	 * @return array<string, mixed>|null Row or null.
+	 */
+	public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array {
+		if ( '' === $payment_intent ) {
+			return null;
+		}
+		global $wpdb;
+		$table = self::table_name( self::resolve_prefix( $slug ) );
+		$row   = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE slug=%s AND gateway=%s AND kind=%s AND payment_intent=%s LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				sanitize_key( $slug ),
+				sanitize_key( $gateway ),
+				self::KIND_CHECKOUT,
+				$payment_intent
 			),
 			ARRAY_A
 		);

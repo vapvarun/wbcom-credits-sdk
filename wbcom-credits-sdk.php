@@ -58,6 +58,7 @@ $wbcom_credits_sdk_classes = array(
 	// Gateway interfaces + helpers (load order matters: interface, DTO, helpers, abstract, concretes).
 	'\\Wbcom\\Credits\\Gateways\\GatewayInterface'        => __DIR__ . '/src/Gateways/GatewayInterface.php',
 	'\\Wbcom\\Credits\\Gateways\\Gateway_Event'           => __DIR__ . '/src/Gateways/Gateway_Event.php',
+	'\\Wbcom\\Credits\\Gateways\\Processed_Events'        => __DIR__ . '/src/Gateways/Processed_Events.php',
 	'\\Wbcom\\Credits\\Gateways\\Idempotency'             => __DIR__ . '/src/Gateways/Idempotency.php',
 	'\\Wbcom\\Credits\\Gateways\\Pending_Checkouts'       => __DIR__ . '/src/Gateways/Pending_Checkouts.php',
 	'\\Wbcom\\Credits\\Gateways\\Signature_Verifier'      => __DIR__ . '/src/Gateways/Signature_Verifier.php',

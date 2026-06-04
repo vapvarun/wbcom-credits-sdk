@@ -35,6 +35,11 @@ final class Gateway_Event {
 	 * @param int    $amount_cents   For checkout: total paid; for refund: amount refunded.
 	 * @param string $currency       ISO 4217.
 	 * @param array  $raw            Original payload, kept for logging.
+	 * @param string $provider_ref   Optional secondary provider id that links this
+	 *                               event to its charge/payment-intent (Stripe pi_...).
+	 *                               Recorded on the checkout row so a later refund
+	 *                               event that carries only this id can resolve the
+	 *                               parent. Empty when the provider has no such id.
 	 */
 	public function __construct(
 		public string $type,
@@ -42,6 +47,7 @@ final class Gateway_Event {
 		public string $session_id,
 		public int $amount_cents,
 		public string $currency,
-		public array $raw = array()
+		public array $raw = array(),
+		public string $provider_ref = ''
 	) {}
 }

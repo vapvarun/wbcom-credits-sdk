@@ -42,8 +42,19 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			return new \WP_REST_Response( array( 'received' => true, 'ignored' => true ), 200 );
 		}
 
-		// Idempotency: if we've already processed this provider event, ack and exit.
-		if ( '' !== $event->event_id && Idempotency::is_processed( $slug, $this->get_id(), $event->event_id ) ) {
+		// Idempotency — claim-then-act. mark_processed() is an atomic
+		// INSERT IGNORE on a UNIQUE (slug, gateway, event_id) key: exactly
+		// one of N concurrent deliveries of the same event gets `true` and
+		// proceeds to credit; every other delivery gets `false` and acks as
+		// a duplicate WITHOUT crediting. The claim must happen BEFORE any
+		// ledger write so the unique constraint — not a racy in-array check
+		// — is what serializes duplicate deliveries.
+		//
+		// Events with no provider id (event_id === '') cannot be deduped;
+		// the gateway is responsible for not emitting creditable events
+		// without an id. We let them through here so a provider that omits
+		// the id on an otherwise-valid event is not silently dropped.
+		if ( '' !== $event->event_id && ! Idempotency::mark_processed( $slug, $this->get_id(), $event->event_id ) ) {
 			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 		}
 
@@ -93,19 +104,21 @@ abstract class Abstract_Gateway implements GatewayInterface {
 
 		Transaction_Log::insert_checkout(
 			array(
-				'slug'         => $slug,
-				'gateway'      => $this->get_id(),
-				'session_id'   => $event->session_id,
-				'event_id'     => $event->event_id,
-				'user_id'      => (int) $expected['user_id'],
-				'credits'      => (int) $expected['credits'],
-				'amount_cents' => $event->amount_cents,
-				'currency'     => strtoupper( $event->currency ),
-				'ledger_id'    => (int) $ledger_id,
+				'slug'           => $slug,
+				'gateway'        => $this->get_id(),
+				'session_id'     => $event->session_id,
+				'payment_intent' => $event->provider_ref,
+				'event_id'       => $event->event_id,
+				'user_id'        => (int) $expected['user_id'],
+				'credits'        => (int) $expected['credits'],
+				'amount_cents'   => $event->amount_cents,
+				'currency'       => strtoupper( $event->currency ),
+				'ledger_id'      => (int) $ledger_id,
 			)
 		);
 
-		Idempotency::mark_processed( $slug, $this->get_id(), $event->event_id );
+		// Event was already claimed atomically in handle_webhook() before we
+		// reached this point, so no mark_processed() call is needed here.
 		Pending_Checkouts::forget( $slug, $event->session_id );
 
 		/**
@@ -198,10 +211,38 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			)
 		);
 		Transaction_Log::add_refunded_amount( $slug, (int) $parent['id'], $refund_amount );
-		Idempotency::mark_processed( $slug, $this->get_id(), $event->event_id );
+		// Event was already claimed atomically in handle_webhook(); no
+		// mark_processed() call is needed here.
+
+		// Fire the SDK's generic refund event so consumer plugins' refund
+		// consumers (audit log, outgoing webhooks, notifications) run for
+		// gateway-initiated refunds too. The gateway revokes credits via
+		// Credits::adjust(), which intentionally does NOT fire SDK actions,
+		// so without this the documented `wbcom_credits_refunded` contract
+		// would be silently skipped for every Stripe/PayPal refund. We only
+		// fire when credits were actually revoked. The payload matches the
+		// documented 3-arg contract ($slug, $user_id, $item_id); gateway
+		// refunds are not item-scoped, so item_id is 0.
+		if ( $credits_to_revoke > 0 ) {
+			/**
+			 * Fires after credits are refunded. Mirrors {@see \Wbcom\Credits\Credits::refund()}
+			 * so consumer event bridges see gateway-initiated refunds identically
+			 * to hold-lifecycle refunds.
+			 *
+			 * @since 1.0.0
+			 *
+			 * @param string $slug    Plugin slug.
+			 * @param int    $user_id WordPress user ID.
+			 * @param int    $item_id Item ID (0 for gateway-initiated refunds).
+			 */
+			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], 0 );
+		}
 
 		/**
 		 * Fires after a refund has been applied to the credits ledger.
+		 * Gateway-scoped companion to the generic `wbcom_credits_refunded`
+		 * action, carrying the richer gateway context (revoked count,
+		 * ledger row, gateway id, session id).
 		 *
 		 * @since 1.2.0
 		 *

@@ -110,6 +110,13 @@ final class Stripe extends Abstract_Gateway {
 			'metadata[wbcom_slug]'                          => $slug,
 			'metadata[wbcom_user_id]'                       => (string) $user_id,
 			'metadata[wbcom_credits]'                       => (string) $credits,
+			// Stamp the Checkout Session id onto the PaymentIntent's metadata.
+			// Stripe copies payment_intent_data.metadata onto the resulting
+			// charge, so the `charge.refunded` webhook carries the cs_ id back
+			// to us. Session-level metadata does NOT propagate to the charge —
+			// without this stamp a refund cannot resolve its parent checkout
+			// row (which is keyed by the cs_ session id).
+			'payment_intent_data[metadata][wbcom_session]'  => '{CHECKOUT_SESSION_ID}',
 			'line_items[0][quantity]'                       => '1',
 			'line_items[0][price_data][currency]'           => strtolower( $currency ),
 			'line_items[0][price_data][unit_amount]'        => (string) $price_cents,
@@ -181,20 +188,46 @@ final class Stripe extends Abstract_Gateway {
 				session_id: (string) $session['id'],
 				amount_cents: (int) ( $session['amount_total'] ?? 0 ),
 				currency: strtoupper( (string) ( $session['currency'] ?? '' ) ),
-				raw: $payload
+				raw: $payload,
+				// Record the PaymentIntent so a later charge.refunded that
+				// arrives without our session-metadata stamp can still resolve
+				// this checkout via Transaction_Log::find_checkout_by_payment_intent().
+				provider_ref: (string) ( $session['payment_intent'] ?? '' )
 			);
 		}
 
 		if ( 'charge.refunded' === $type ) {
-			$charge     = $payload['data']['object'] ?? array();
-			$session_id = (string) ( $charge['payment_intent'] ?? '' );
-			// Stripe charge events list payment_intent, but we record sessions.
-			// Resolve the session id from the previous attribute if Stripe
-			// supplies it, otherwise rely on the latest_charge → session
-			// linkage stored in metadata when the session was created.
-			if ( '' === $session_id && isset( $charge['metadata']['wbcom_session'] ) ) {
-				$session_id = (string) $charge['metadata']['wbcom_session'];
+			$charge = $payload['data']['object'] ?? array();
+			if ( ! is_array( $charge ) ) {
+				return null;
 			}
+
+			// The parent checkout row is keyed by the Checkout Session id
+			// (cs_...). A charge object does NOT carry the session id, only
+			// the PaymentIntent (pi_...). We PREFER the cs_ id we stamped
+			// onto the PaymentIntent metadata at session creation
+			// (payment_intent_data[metadata][wbcom_session]); Stripe copies
+			// that onto the charge, so it is present on the normal path.
+			$metadata   = isset( $charge['metadata'] ) && is_array( $charge['metadata'] ) ? $charge['metadata'] : array();
+			$session_id = (string) ( $metadata['wbcom_session'] ?? '' );
+
+			// Secondary resolution (legacy sessions created before the
+			// metadata stamp shipped): translate the PaymentIntent id to the
+			// recorded checkout session id via the transaction log.
+			if ( '' === $session_id ) {
+				$payment_intent = (string) ( $charge['payment_intent'] ?? '' );
+				if ( '' !== $payment_intent ) {
+					$parent = Transaction_Log::find_checkout_by_payment_intent(
+						$this->active_slug(),
+						self::ID,
+						$payment_intent
+					);
+					if ( null !== $parent ) {
+						$session_id = (string) ( $parent['session_id'] ?? '' );
+					}
+				}
+			}
+
 			$refund_amount = (int) ( $charge['amount_refunded'] ?? 0 );
 			if ( '' === $session_id || $refund_amount <= 0 ) {
 				return null;

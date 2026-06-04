@@ -10,8 +10,8 @@ Adapters/AdapterRegistry.php:114 — 	public function get( string $id ): ?Adapte
 Adapters/AdapterRegistry.php:125 — 	public function get_all(): array {
 Adapters/AdapterRegistry.php:136 — 	public function get_available(): array {
 Adapters/AdapterRegistry.php:155 — 	public function lookup_credits( string $adapter_id, int|string $item_id ): int {
-Adapters/AdapterRegistry.php:175 — 	public function get_slug(): string {
-Adapters/AdapterRegistry.php:186 — 	public function get_prefix(): string {
+Adapters/AdapterRegistry.php:206 — 	public function get_slug(): string {
+Adapters/AdapterRegistry.php:217 — 	public function get_prefix(): string {
 Adapters/MemberPress.php:40 — 	public function get_id(): string {
 Adapters/MemberPress.php:47 — 	public function get_label(): string {
 Adapters/MemberPress.php:54 — 	public function is_available(): bool {
@@ -70,7 +70,7 @@ Gateways/Admin_Form_Renderer.php:421 — 	public static function webhook_url( st
 Gateways/Admin_Form_Renderer.php:433 — 	public static function get_saved_settings( string $slug ): array {
 Gateways/Gateway_Event.php:28 — 	public const TYPE_CHECKOUT_COMPLETED = 'checkout.completed';
 Gateways/Gateway_Event.php:29 — 	public const TYPE_REFUND             = 'refund';
-Gateways/Gateway_Event.php:39 — 	public function __construct(
+Gateways/Gateway_Event.php:44 — 	public function __construct(
 Gateways/Gateway_Registry.php:42 — 	public function __construct( string $slug ) {
 Gateways/Gateway_Registry.php:50 — 	public function boot(): void {
 Gateways/Gateway_Registry.php:63 — 	public function register( GatewayInterface $gateway ): void {
@@ -89,9 +89,9 @@ Gateways/GatewayInterface.php:101 — 	public function verify_signature( string 
 Gateways/GatewayInterface.php:114 — 	public function normalize_event( array $payload ): ?Gateway_Event;
 Gateways/GatewayInterface.php:129 — 	public function handle_webhook( string $slug, array $payload ): \WP_REST_Response;
 Gateways/GatewayInterface.php:149 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool;
-Gateways/Idempotency.php:58 — 	public static function is_processed( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Idempotency.php:77 — 	public static function mark_processed( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Idempotency.php:105 — 	public static function reset_for_tests( string $slug, string $gateway ): void {
+Gateways/Idempotency.php:50 — 	public static function is_processed( string $slug, string $gateway, string $event_id ): bool {
+Gateways/Idempotency.php:67 — 	public static function mark_processed( string $slug, string $gateway, string $event_id ): bool {
+Gateways/Idempotency.php:82 — 	public static function reset_for_tests( string $slug, string $gateway ): void {
 Gateways/PayPal.php:31 — 	public const ID = 'paypal';
 Gateways/PayPal.php:36 — 	public function get_id(): string {
 Gateways/PayPal.php:40 — 	public function get_label(): string {
@@ -107,6 +107,11 @@ Gateways/Pending_Checkouts.php:119 — 	public static function forget( string $s
 Gateways/Pending_Checkouts.php:171 — 	public static function reset_for_tests( string $slug ): void {
 Gateways/Pricing.php:50 — 	public static function resolve( string $slug, array $params ): array {
 Gateways/Pricing.php:147 — 	public function __construct( public string $error_code, string $message, public int $http_status = 400 ) {
+Gateways/Processed_Events.php:40 — 	public static function table_name( string $prefix ): string {
+Gateways/Processed_Events.php:54 — 	public static function maybe_create_table( string $prefix ): void {
+Gateways/Processed_Events.php:91 — 	public static function claim( string $slug, string $gateway, string $event_id ): bool {
+Gateways/Processed_Events.php:122 — 	public static function exists( string $slug, string $gateway, string $event_id ): bool {
+Gateways/Processed_Events.php:149 — 	public static function reset_for_tests( string $slug, string $gateway ): void {
 Gateways/Signature_Verifier.php:57 — 	public static function verify_stripe(
 Gateways/Signature_Verifier.php:141 — 	public static function verify_paypal(
 Gateways/Stripe.php:34 — 	public const ID = 'stripe';
@@ -115,17 +120,18 @@ Gateways/Stripe.php:40 — 	public function get_label(): string {
 Gateways/Stripe.php:44 — 	public function is_available(): bool {
 Gateways/Stripe.php:52 — 	public function get_settings_fields(): array {
 Gateways/Stripe.php:77 — 	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string {
-Gateways/Stripe.php:158 — 	public function verify_signature( string $raw_body, array $headers ): bool {
-Gateways/Stripe.php:166 — 	public function normalize_event( array $payload ): ?Gateway_Event {
-Gateways/Stripe.php:224 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool {
+Gateways/Stripe.php:165 — 	public function verify_signature( string $raw_body, array $headers ): bool {
+Gateways/Stripe.php:173 — 	public function normalize_event( array $payload ): ?Gateway_Event {
+Gateways/Stripe.php:257 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool {
 Gateways/Transaction_Log.php:35 — 	public const KIND_CHECKOUT = 'checkout';
 Gateways/Transaction_Log.php:36 — 	public const KIND_REFUND   = 'refund';
 Gateways/Transaction_Log.php:44 — 	public static function table_name( string $prefix ): string {
 Gateways/Transaction_Log.php:55 — 	public static function maybe_create_table( string $prefix ): void {
-Gateways/Transaction_Log.php:96 — 	public static function insert_checkout( array $row ): int {
-Gateways/Transaction_Log.php:128 — 	public static function insert_refund( array $row ): int {
-Gateways/Transaction_Log.php:156 — 	public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array {
-Gateways/Transaction_Log.php:181 — 	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
+Gateways/Transaction_Log.php:101 — 	public static function insert_checkout( array $row ): int {
+Gateways/Transaction_Log.php:134 — 	public static function insert_refund( array $row ): int {
+Gateways/Transaction_Log.php:162 — 	public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array {
+Gateways/Transaction_Log.php:192 — 	public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array {
+Gateways/Transaction_Log.php:220 — 	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
 Gateways/Webhook_Controller.php:43 — 	public function __construct( string $slug ) {
 Gateways/Webhook_Controller.php:50 — 	public function register_routes(): void {
 Gateways/Webhook_Controller.php:110 — 	public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
@@ -145,7 +151,7 @@ Registry.php:93 — 	public function get( string $slug ): ?array {
 Registry.php:103 — 	public function get_slugs(): array {
 Registry.php:113 — 	public function get_all(): array {
 Registry.php:123 — 	public function boot_all(): void {
-Registry.php:168 — 	public static function instance(): self {
+Registry.php:222 — 	public static function instance(): self {
 REST.php:59 — 	public function __construct( string $slug, string $prefix, string $user_type ) {
 REST.php:71 — 	public function register_routes(): void {
 REST.php:152 — 	public function get_balance( \WP_REST_Request $request ): \WP_REST_Response {

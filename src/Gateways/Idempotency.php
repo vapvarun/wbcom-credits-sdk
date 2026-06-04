@@ -7,10 +7,15 @@
  * dedupe, a flaky network or slow database write can credit the same
  * payment two or more times.
  *
- * Storage is a per-slug option (`wbcom_credits_processed_events_{slug}`)
- * holding a FIFO ring of the last N processed event IDs. Reading is O(N)
- * but N is small (default 1000) and the ring lives in WP options cache,
- * so it is effectively free on every webhook.
+ * Storage moved from a per-slug option ring to a dedicated table with a
+ * UNIQUE key (see {@see Processed_Events}). The option ring was a
+ * read-modify-write: two concurrent deliveries of the same event could
+ * both pass `is_processed()` and both credit. The table makes the claim
+ * atomic — exactly one delivery wins the `INSERT IGNORE`.
+ *
+ * This class is now a thin, backward-compatible facade over
+ * {@see Processed_Events} so existing callers (`is_processed()` /
+ * `mark_processed()`) keep working while gaining the atomic guarantee.
  *
  * @package Wbcom\Credits\Gateways
  * @since   1.2.0
@@ -30,25 +35,12 @@ defined( 'ABSPATH' ) || exit;
 final class Idempotency {
 
 	/**
-	 * Maximum events retained per (slug, gateway) pair.
+	 * Cheap existence pre-check.
 	 *
-	 * @var int
-	 */
-	private const MAX_EVENTS = 1000;
-
-	/**
-	 * Build the per-slug option key.
-	 *
-	 * @param string $slug    Plugin slug.
-	 * @param string $gateway Gateway id (e.g. 'stripe').
-	 * @return string
-	 */
-	private static function option_key( string $slug, string $gateway ): string {
-		return sprintf( 'wbcom_credits_processed_events_%s_%s', sanitize_key( $slug ), sanitize_key( $gateway ) );
-	}
-
-	/**
-	 * Check whether the given event has already been processed for this gateway.
+	 * NOTE: this is NOT a standalone guard. Two concurrent deliveries can
+	 * both see "not processed" here before either claims. The atomic guard
+	 * is {@see mark_processed()}'s return value — callers must claim FIRST
+	 * and only proceed to credit when the claim returns true.
 	 *
 	 * @param string $slug     Plugin slug.
 	 * @param string $gateway  Gateway id.
@@ -56,18 +48,16 @@ final class Idempotency {
 	 * @return bool
 	 */
 	public static function is_processed( string $slug, string $gateway, string $event_id ): bool {
-		if ( '' === $event_id ) {
-			return false;
-		}
-		$ring = get_option( self::option_key( $slug, $gateway ), array() );
-		if ( ! is_array( $ring ) ) {
-			return false;
-		}
-		return in_array( $event_id, $ring, true );
+		return Processed_Events::exists( $slug, $gateway, $event_id );
 	}
 
 	/**
-	 * Record an event as processed. Returns true if newly stored, false if already present.
+	 * Atomically claim an event as processed.
+	 *
+	 * Returns TRUE only when this call was the first to record the event
+	 * (it owns the event — proceed to credit). Returns FALSE when the
+	 * event was already recorded (a duplicate delivery — stop) or the
+	 * event id is empty.
 	 *
 	 * @param string $slug     Plugin slug.
 	 * @param string $gateway  Gateway id.
@@ -75,34 +65,21 @@ final class Idempotency {
 	 * @return bool True if recorded for the first time.
 	 */
 	public static function mark_processed( string $slug, string $gateway, string $event_id ): bool {
-		if ( '' === $event_id ) {
-			return false;
-		}
-		$key  = self::option_key( $slug, $gateway );
-		$ring = get_option( $key, array() );
-		if ( ! is_array( $ring ) ) {
-			$ring = array();
-		}
-		if ( in_array( $event_id, $ring, true ) ) {
-			return false;
-		}
-		$ring[] = $event_id;
-		// FIFO trim so the ring never grows without bound.
-		if ( count( $ring ) > self::MAX_EVENTS ) {
-			$ring = array_slice( $ring, -self::MAX_EVENTS );
-		}
-		update_option( $key, $ring, false );
-		return true;
+		return Processed_Events::claim( $slug, $gateway, $event_id );
 	}
 
 	/**
-	 * Reset the ring for tests.
+	 * Reset the processed-events store for a (slug, gateway) pair.
+	 *
+	 * Retained for backward compatibility with callers/tests written
+	 * against the pre-1.3.1 option-ring API. Now delegates to the
+	 * table-backed store.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param string $gateway Gateway id.
 	 * @return void
 	 */
 	public static function reset_for_tests( string $slug, string $gateway ): void {
-		delete_option( self::option_key( $slug, $gateway ) );
+		Processed_Events::reset_for_tests( $slug, $gateway );
 	}
 }

@@ -122,11 +122,11 @@ final class Registry {
 	 */
 	public function boot_all(): void {
 		foreach ( $this->plugins as $slug => $config ) {
-			// Create the ledger table if needed.
-			Ledger::maybe_create_table( $config['prefix'] );
-
-			// Create the gateway transaction-log table for direct payments.
-			Gateways\Transaction_Log::maybe_create_table( $config['prefix'] );
+			// Ensure the per-consumer schema is current (creates/upgrades
+			// the ledger, gateway log, and processed-events tables). Guarded
+			// by a stored DB-version option so the SHOW TABLES probes only
+			// run when the schema version actually changes.
+			self::maybe_upgrade_schema( (string) $config['prefix'] );
 
 			// Wire consumer hooks (hold/deduct/refund lifecycle).
 			foreach ( $config['consumers'] as $consumer_config ) {
@@ -157,6 +157,60 @@ final class Registry {
 				( new Gateways\Webhook_Controller( $slug ) )->register_routes();
 			} );
 		}
+	}
+
+	/**
+	 * Current SDK schema version.
+	 *
+	 * Bump this whenever a table is added or a column/key changes so
+	 * {@see maybe_upgrade_schema()} re-runs the idempotent create/upgrade
+	 * pass on the next request after a consumer ships the new SDK.
+	 *
+	 * History:
+	 *  - 1: ledger + gateway transaction-log tables (SDK 1.2.0).
+	 *  - 2: added {prefix}_credit_processed_events with UNIQUE(slug,gateway,
+	 *       event_id) for atomic webhook dedupe (SDK 1.3.1).
+	 *
+	 * @since 1.3.1
+	 * @var int
+	 */
+	private const SCHEMA_VERSION = 2;
+
+	/**
+	 * Create or upgrade the per-consumer schema, guarded by a stored
+	 * DB-version option so the work runs only when the schema changes.
+	 *
+	 * All create steps are themselves idempotent (SHOW TABLES guard +
+	 * dbDelta / CREATE-if-missing), so this is safe to run repeatedly; the
+	 * version gate just spares the probes on the steady-state hot path.
+	 *
+	 * @since 1.3.1
+	 *
+	 * @param string $prefix Consumer DB prefix.
+	 * @return void
+	 */
+	private static function maybe_upgrade_schema( string $prefix ): void {
+		$prefix = sanitize_key( $prefix );
+		if ( '' === $prefix ) {
+			return;
+		}
+
+		$option_key = 'wbcom_credits_db_version_' . $prefix;
+		$installed  = (int) get_option( $option_key, 0 );
+		if ( $installed >= self::SCHEMA_VERSION ) {
+			return;
+		}
+
+		// Append-only ledger (canonical balance source).
+		Ledger::maybe_create_table( $prefix );
+
+		// Per-gateway transaction log for direct payments.
+		Gateways\Transaction_Log::maybe_create_table( $prefix );
+
+		// Atomic webhook dedupe store (UNIQUE constraint backed).
+		Gateways\Processed_Events::maybe_create_table( $prefix );
+
+		update_option( $option_key, self::SCHEMA_VERSION, false );
 	}
 
 	/**

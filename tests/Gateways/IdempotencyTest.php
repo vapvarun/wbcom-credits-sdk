@@ -1,7 +1,12 @@
 <?php
 /**
- * Idempotency tests — proves replayed webhook events are no-ops and the
- * FIFO ring trims correctly when MAX_EVENTS is exceeded.
+ * Idempotency tests — proves the claim is ATOMIC: exactly one of N
+ * deliveries of the same event wins, every other is told "duplicate"
+ * WITHOUT a second ledger write.
+ *
+ * Storage is now a table with a UNIQUE (slug, gateway, event_id) key
+ * (see Processed_Events). The FakeWpdb shim enforces that unique key so
+ * these tests exercise the real constraint behaviour, not a PHP array.
  *
  * @package Wbcom\Credits\Tests
  */
@@ -12,11 +17,18 @@ namespace Wbcom\Credits\Tests\Gateways;
 
 use PHPUnit\Framework\TestCase;
 use Wbcom\Credits\Gateways\Idempotency;
+use Wbcom\Credits\Gateways\Processed_Events;
+use Wbcom\Credits\Tests\Support\FakeWpdb;
 
 final class IdempotencyTest extends TestCase {
 
 	protected function setUp(): void {
-		Idempotency::reset_for_tests( 'plug', 'stripe' );
+		global $wpdb;
+		$wpdb = new FakeWpdb();
+		// Create the processed-events table for every prefix these tests use.
+		foreach ( array( 'plug', 'plug-a', 'plug-b' ) as $prefix ) {
+			Processed_Events::maybe_create_table( $prefix );
+		}
 	}
 
 	public function test_initial_event_is_recorded(): void {
@@ -26,10 +38,25 @@ final class IdempotencyTest extends TestCase {
 	}
 
 	public function test_duplicate_event_returns_false(): void {
-		Idempotency::mark_processed( 'plug', 'stripe', 'evt_dup' );
+		self::assertTrue( Idempotency::mark_processed( 'plug', 'stripe', 'evt_dup' ) );
 		self::assertFalse(
 			Idempotency::mark_processed( 'plug', 'stripe', 'evt_dup' ),
 			'Second mark for same event must report duplicate.'
+		);
+	}
+
+	public function test_concurrent_claims_only_one_wins(): void {
+		// Simulate N concurrent deliveries of the same provider event. The
+		// UNIQUE constraint must let exactly ONE claim succeed; the rest
+		// must all be rejected so they never reach the credit path.
+		$results = array();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$results[] = Idempotency::mark_processed( 'plug', 'stripe', 'evt_race' );
+		}
+		self::assertSame(
+			1,
+			count( array_filter( $results ) ),
+			'Exactly one of N concurrent claims for the same event must win.'
 		);
 	}
 
@@ -42,7 +69,11 @@ final class IdempotencyTest extends TestCase {
 		Idempotency::mark_processed( 'plug', 'stripe', 'evt_x' );
 		self::assertFalse(
 			Idempotency::is_processed( 'plug', 'paypal', 'evt_x' ),
-			'Stripe ring must not bleed into PayPal ring.'
+			'Stripe claim must not bleed into PayPal.'
+		);
+		self::assertTrue(
+			Idempotency::mark_processed( 'plug', 'paypal', 'evt_x' ),
+			'Same event id on a different gateway must be claimable.'
 		);
 	}
 
@@ -52,20 +83,9 @@ final class IdempotencyTest extends TestCase {
 			Idempotency::is_processed( 'plug-b', 'stripe', 'evt_y' ),
 			'Per-slug isolation: a different consuming plugin must not collide.'
 		);
-	}
-
-	public function test_fifo_trim_at_max_events(): void {
-		// Push 1010 events; the first 10 should fall off the ring.
-		for ( $i = 1; $i <= 1010; $i++ ) {
-			Idempotency::mark_processed( 'plug', 'stripe', 'evt_' . $i );
-		}
-		self::assertFalse(
-			Idempotency::is_processed( 'plug', 'stripe', 'evt_1' ),
-			'Oldest event must be evicted when ring exceeds MAX_EVENTS.'
-		);
 		self::assertTrue(
-			Idempotency::is_processed( 'plug', 'stripe', 'evt_1010' ),
-			'Newest event must remain in the ring.'
+			Idempotency::mark_processed( 'plug-b', 'stripe', 'evt_y' ),
+			'Same event id under a different slug must be claimable.'
 		);
 	}
 }
