@@ -69,6 +69,8 @@ $wbcom_credits_sdk_classes = array(
 	'\\Wbcom\\Credits\\Gateways\\Gateway_Registry'        => __DIR__ . '/src/Gateways/Gateway_Registry.php',
 	'\\Wbcom\\Credits\\Gateways\\Webhook_Controller'      => __DIR__ . '/src/Gateways/Webhook_Controller.php',
 	'\\Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => __DIR__ . '/src/Gateways/Admin_Form_Renderer.php',
+	'\\Wbcom\\Credits\\Gateways\\Pricing'                 => __DIR__ . '/src/Gateways/Pricing.php',
+	'\\Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => __DIR__ . '/src/Gateways/Pack_Admin_Renderer.php',
 );
 
 foreach ( $wbcom_credits_sdk_classes as $wbcom_credits_sdk_class => $wbcom_credits_sdk_file ) {
