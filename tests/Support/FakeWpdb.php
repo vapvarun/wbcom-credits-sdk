@@ -136,6 +136,10 @@ final class FakeWpdb {
 			}
 			return (string) $sum;
 		}
+		// Transaction_Log::count_transactions — SELECT COUNT(*) FROM t WHERE slug='..' [AND kind='..'] [AND gateway='..'] [AND user_id=N]
+		if ( preg_match( '/SELECT\s+COUNT\(\*\)\s+FROM\s+(\S+)\s+WHERE\s+(.+?)\s*$/is', $sql, $m ) ) {
+			return (string) count( $this->filter_log_rows( $m[1], $m[2] ) );
+		}
 		return null;
 	}
 
@@ -154,7 +158,41 @@ final class FakeWpdb {
 			usort( $rows, static fn ( $a, $b ) => strcmp( (string) ( $b['created_at'] ?? '' ), (string) ( $a['created_at'] ?? '' ) ) );
 			return array_slice( $rows, $offset, $limit );
 		}
+		// Transaction_Log::list_transactions — SELECT * FROM t WHERE slug='..' [AND kind='..'] [AND gateway='..'] [AND user_id=N] ORDER BY id DESC LIMIT N OFFSET N
+		if ( preg_match( '/SELECT \* FROM\s+(\S+)\s+WHERE\s+(.+?)\s+ORDER BY\s+id DESC\s+LIMIT\s+(\d+)\s+OFFSET\s+(\d+)/is', $sql, $m ) ) {
+			$rows = $this->filter_log_rows( $m[1], $m[2] );
+			usort( $rows, static fn ( $a, $b ) => (int) ( $b['id'] ?? 0 ) <=> (int) ( $a['id'] ?? 0 ) );
+			return array_slice( $rows, (int) $m[4], (int) $m[3] );
+		}
 		return array();
+	}
+
+	/**
+	 * Filter stored rows of a table by the equality conditions found in a
+	 * WHERE clause (slug / kind / gateway string cols + user_id int). Shared by
+	 * the Transaction_Log list + count shims.
+	 *
+	 * @param string $table Table name.
+	 * @param string $where WHERE clause with params already interpolated.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function filter_log_rows( string $table, string $where ): array {
+		$rows = array_values( $this->tables[ $table ] ?? array() );
+		foreach ( array( 'slug', 'kind', 'gateway' ) as $col ) {
+			if ( preg_match( "/\b{$col}\s*=\s*'([^']*)'/i", $where, $mm ) ) {
+				$val  = $mm[1];
+				$rows = array_values(
+					array_filter( $rows, static fn ( $r ) => (string) ( $r[ $col ] ?? '' ) === $val )
+				);
+			}
+		}
+		if ( preg_match( '/\buser_id\s*=\s*(\d+)/i', $where, $mm ) ) {
+			$uid  = (int) $mm[1];
+			$rows = array_values(
+				array_filter( $rows, static fn ( $r ) => (int) ( $r['user_id'] ?? 0 ) === $uid )
+			);
+		}
+		return $rows;
 	}
 
 	/**

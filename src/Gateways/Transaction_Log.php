@@ -282,6 +282,96 @@ final class Transaction_Log {
 	}
 
 	/**
+	 * List gateway-log rows for a consumer, newest first, paginated + filtered.
+	 *
+	 * The read side of the append-only gateway log. A consuming plugin surfaces
+	 * these as an admin "Transactions" view — every checkout + refund with its
+	 * money amount, credits, gateway, and session id (the id the refund route
+	 * needs). Filter by `kind` (checkout|refund), `gateway`, or `user_id`.
+	 *
+	 * @since 1.4.2
+	 *
+	 * @param string               $slug Consumer slug.
+	 * @param array<string,mixed>  $args {
+	 *     Optional. kind, gateway, user_id filters + limit (1..100, default 20)
+	 *     + offset.
+	 * }
+	 * @return array<int,array<string,mixed>> Rows (ARRAY_A), newest id first.
+	 */
+	public static function list_transactions( string $slug, array $args = array() ): array {
+		global $wpdb;
+
+		$table = self::table_name( self::resolve_prefix( $slug ) );
+		list( $where, $params ) = self::build_filter( $slug, $args );
+
+		$limit    = max( 1, min( 100, (int) ( $args['limit'] ?? 20 ) ) );
+		$offset   = max( 0, (int) ( $args['offset'] ?? 0 ) );
+		$params[] = $limit;
+		$params[] = $offset;
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE {$where} ORDER BY id DESC LIMIT %d OFFSET %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$params
+			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * Count gateway-log rows for a consumer under the same filters as
+	 * {@see list_transactions()} — for admin pagination totals.
+	 *
+	 * @since 1.4.2
+	 *
+	 * @param string              $slug Consumer slug.
+	 * @param array<string,mixed> $args kind, gateway, user_id filters.
+	 * @return int
+	 */
+	public static function count_transactions( string $slug, array $args = array() ): int {
+		global $wpdb;
+
+		$table = self::table_name( self::resolve_prefix( $slug ) );
+		list( $where, $params ) = self::build_filter( $slug, $args );
+
+		return (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$table} WHERE {$where}", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$params
+			)
+		);
+	}
+
+	/**
+	 * Build the shared WHERE clause + bound params for the read helpers.
+	 *
+	 * @param string              $slug Consumer slug.
+	 * @param array<string,mixed> $args Filter args.
+	 * @return array{0:string,1:array<int,mixed>} [ where_sql, params ].
+	 */
+	private static function build_filter( string $slug, array $args ): array {
+		$where  = array( 'slug = %s' );
+		$params = array( sanitize_key( $slug ) );
+
+		if ( ! empty( $args['kind'] ) ) {
+			$where[]  = 'kind = %s';
+			$params[] = sanitize_key( (string) $args['kind'] );
+		}
+		if ( ! empty( $args['gateway'] ) ) {
+			$where[]  = 'gateway = %s';
+			$params[] = sanitize_key( (string) $args['gateway'] );
+		}
+		if ( ! empty( $args['user_id'] ) ) {
+			$where[]  = 'user_id = %d';
+			$params[] = (int) $args['user_id'];
+		}
+
+		return array( implode( ' AND ', $where ), $params );
+	}
+
+	/**
 	 * Resolve consumer DB prefix from slug via the SDK Registry.
 	 *
 	 * @param string $slug

@@ -4,6 +4,16 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-07-13
+
+### Added
+
+- **`Transaction_Log::list_transactions()` + `count_transactions()` — the read side of the gateway log.** The append-only gateway log had writers (checkout/refund inserts) and single-row lookups but no way for a consumer to LIST it. These add a paginated, newest-first reader (filterable by `kind`, `gateway`, `user_id`; `limit` clamped 1..100 + `offset`) and a matching count for pagination totals, so a consuming plugin can surface an admin "Transactions" view — every purchase and refund with its money amount, credits, gateway, and the `session_id` the refund route needs. Read-only; no schema change.
+
+### Tests
+
+- `tests/Gateways/TransactionLogReaderTest.php` (new) — locks newest-first ordering, limit/offset pagination, `kind`/`gateway`/`user_id` filtering, and cross-slug isolation (one consumer never sees another's rows through the shared table).
+
 ## [1.4.1] - 2026-07-13
 
 ### Fixed
