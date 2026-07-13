@@ -156,6 +156,33 @@ final class Registry {
 				( new REST( $slug, $config['prefix'], $config['user_type'] ) )->register_routes();
 				( new Gateways\Webhook_Controller( $slug ) )->register_routes();
 			} );
+
+			// Register (but do not enqueue) the reusable browser-side checkout
+			// helper. Consuming plugins call wp_enqueue_script() themselves
+			// where they render a buy-credits UI, then call
+			// window.wbcomCreditsCheckout({ slug, gateway, pack_id|credits }).
+			// The handle is shared across every consumer on the site, so the
+			// wp_script_is() guard keeps re-registration a no-op.
+			add_action( 'wp_enqueue_scripts', static function (): void {
+				$handle = 'wbcom-credits-checkout';
+				if ( ! wp_script_is( $handle, 'registered' ) ) {
+					wp_register_script(
+						$handle,
+						plugins_url( 'assets/js/checkout.js', WBCOM_CREDITS_SDK_PATH . '/wbcom-credits-sdk.php' ),
+						array(),
+						WBCOM_CREDITS_SDK_VERSION,
+						true
+					);
+					wp_localize_script(
+						$handle,
+						'wbcomCreditsCfg',
+						array(
+							'restRoot' => esc_url_raw( rest_url( 'wbcom-credits/v1/' ) ),
+							'nonce'    => wp_create_nonce( 'wp_rest' ),
+						)
+					);
+				}
+			} );
 		}
 	}
 
