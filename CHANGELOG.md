@@ -4,6 +4,8 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-13
+
 ### Added (frontend checkout)
 
 - **Reusable JS checkout helper (`assets/js/checkout.js`).** Registers a `window.wbcomCreditsCheckout({ slug, gateway, pack_id, credits, returnUrl })` global that POSTs to `/{slug}/checkout/{gateway}` (with `X-WP-Nonce`), then redirects the browser to the hosted checkout URL the SDK returns. `Registry` registers (not enqueues) a `wbcom-credits-checkout` script handle localized with `wbcomCreditsCfg = { restRoot, nonce }`, once per request regardless of consumer count; consuming plugins call `wp_enqueue_script('wbcom-credits-checkout')` where they render a buy button. This is the browser half of the existing `/checkout/{gateway}` REST route — no consumer has to hand-roll the fetch/redirect.
