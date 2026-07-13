@@ -94,6 +94,14 @@ final class Pack_Admin_Renderer {
 				'price'   => '',
 			);
 		}
+		static $printed_style = false;
+		if ( ! $printed_style ) {
+			$printed_style = true;
+			// Scoped one-time style: WP's `small-text` (~50px) truncates 3-digit
+			// credit/price values and 3-char currency codes. Widen inputs within
+			// this component so values are never clipped. Kept generic + minimal.
+			echo '<style>.wbcom-credits-packs input.small-text{width:5.5em}.wbcom-credits-packs-table td input.small-text{width:100%;min-width:5em}.wbcom-credits-packs-table{max-width:24em}</style>';
+		}
 		?>
 		<div class="wbcom-credits-packs" data-option="<?php echo esc_attr( $option_name ); ?>">
 			<fieldset>
