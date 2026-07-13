@@ -157,6 +157,49 @@ final class Registry {
 				( new Gateways\Webhook_Controller( $slug ) )->register_routes();
 			} );
 		}
+
+		self::register_checkout_script();
+	}
+
+	/**
+	 * Attach the reusable browser-side checkout helper to
+	 * `wp_enqueue_scripts` once per boot_all() call, regardless of how many
+	 * consuming plugins are registered.
+	 *
+	 * Consuming plugins call wp_enqueue_script() themselves where they
+	 * render a buy-credits UI, then call
+	 * window.wbcomCreditsCheckout({ slug, gateway, pack_id|credits }). The
+	 * handle is global (shared across every consumer on the site, not
+	 * slug-specific), so this is wired once here — outside boot_all()'s
+	 * per-consumer foreach — instead of attaching N identical closures to
+	 * the same hook when N plugins register. The wp_script_is() guard
+	 * inside the closure is kept as a second, independent safeguard (e.g.
+	 * against another `wbcom-credits-checkout` registration elsewhere).
+	 *
+	 * @since 1.3.2
+	 * @return void
+	 */
+	private static function register_checkout_script(): void {
+		add_action( 'wp_enqueue_scripts', static function (): void {
+			$handle = 'wbcom-credits-checkout';
+			if ( ! wp_script_is( $handle, 'registered' ) ) {
+				wp_register_script(
+					$handle,
+					plugins_url( 'assets/js/checkout.js', WBCOM_CREDITS_SDK_PATH . '/wbcom-credits-sdk.php' ),
+					array(),
+					WBCOM_CREDITS_SDK_VERSION,
+					true
+				);
+				wp_localize_script(
+					$handle,
+					'wbcomCreditsCfg',
+					array(
+						'restRoot' => esc_url_raw( rest_url( 'wbcom-credits/v1/' ) ),
+						'nonce'    => wp_create_nonce( 'wp_rest' ),
+					)
+				);
+			}
+		} );
 	}
 
 	/**

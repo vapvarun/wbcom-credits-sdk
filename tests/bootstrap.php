@@ -20,6 +20,17 @@ if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
 	define( 'MINUTE_IN_SECONDS', 60 );
 }
 
+// Normally defined by wbcom-credits-sdk.php's version-initializer, which
+// only runs on the 'after_setup_theme' hook in a real WP request. Tests
+// never fire that hook, so the asset-registration code in Registry.php
+// (which references these) needs them defined here instead.
+if ( ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
+	define( 'WBCOM_CREDITS_SDK_VERSION', '1.3.0' );
+}
+if ( ! defined( 'WBCOM_CREDITS_SDK_PATH' ) ) {
+	define( 'WBCOM_CREDITS_SDK_PATH', dirname( __DIR__ ) );
+}
+
 // $wpdb output-format constants used by get_row()/get_results().
 if ( ! defined( 'ARRAY_A' ) ) {
 	define( 'ARRAY_A', 'ARRAY_A' );
@@ -133,6 +144,44 @@ if ( ! function_exists( 'esc_html' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_attr' ) ) {
+	function esc_attr( $s ): string {
+		return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_html_e' ) ) {
+	function esc_html_e( string $s, ?string $domain = null ): void {
+		echo esc_html( $s );
+	}
+}
+
+if ( ! function_exists( 'esc_attr_e' ) ) {
+	function esc_attr_e( string $s, ?string $domain = null ): void {
+		echo esc_attr( $s );
+	}
+}
+
+if ( ! function_exists( 'checked' ) ) {
+	function checked( $checked, $current = true, bool $echo = true ): string {
+		$result = ( (string) $checked === (string) $current ) ? ' checked="checked"' : '';
+		if ( $echo ) {
+			echo $result;
+		}
+		return $result;
+	}
+}
+
+if ( ! function_exists( 'selected' ) ) {
+	function selected( $selected, $current = true, bool $echo = true ): string {
+		$result = ( (string) $selected === (string) $current ) ? ' selected="selected"' : '';
+		if ( $echo ) {
+			echo $result;
+		}
+		return $result;
+	}
+}
+
 global $wbcom_credits_test_hooks, $wbcom_credits_test_routes;
 $wbcom_credits_test_hooks  = array(
 	'actions' => array(),
@@ -203,6 +252,106 @@ if ( ! function_exists( 'register_rest_route' ) ) {
 		global $wbcom_credits_test_routes;
 		$wbcom_credits_test_routes[ $namespace . $route ] = $args;
 		return true;
+	}
+}
+
+// Script registration API — needed by the reusable JS checkout helper
+// (Registry::boot_all() registers + localizes the 'wbcom-credits-checkout'
+// handle on 'wp_enqueue_scripts'). Minimal shim mirroring WP_Scripts'
+// externally-visible behaviour: register/enqueue state + localized data.
+global $wbcom_credits_test_scripts;
+$wbcom_credits_test_scripts = array();
+
+if ( ! function_exists( 'wp_register_script' ) ) {
+	function wp_register_script( string $handle, string $src, array $deps = array(), $ver = false, bool $in_footer = false ): bool {
+		global $wbcom_credits_test_scripts;
+		// Mirror WP_Scripts::add(): re-registering an already-registered
+		// handle is a no-op (returns false, existing entry incl. any
+		// localized 'data' is left untouched) rather than resetting it.
+		if ( isset( $wbcom_credits_test_scripts[ $handle ] ) ) {
+			return false;
+		}
+		$wbcom_credits_test_scripts[ $handle ] = array(
+			'src'       => $src,
+			'deps'      => $deps,
+			'ver'       => $ver,
+			'in_footer' => $in_footer,
+			'enqueued'  => false,
+			'data'      => array(),
+		);
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_script' ) ) {
+	function wp_enqueue_script( string $handle, string $src = '', array $deps = array(), $ver = false, bool $in_footer = false ): void {
+		global $wbcom_credits_test_scripts;
+		if ( ! isset( $wbcom_credits_test_scripts[ $handle ] ) ) {
+			wp_register_script( $handle, $src, $deps, $ver, $in_footer );
+		}
+		$wbcom_credits_test_scripts[ $handle ]['enqueued'] = true;
+	}
+}
+
+if ( ! function_exists( 'wp_script_is' ) ) {
+	function wp_script_is( string $handle, string $list = 'enqueued' ): bool {
+		global $wbcom_credits_test_scripts;
+		if ( ! isset( $wbcom_credits_test_scripts[ $handle ] ) ) {
+			return false;
+		}
+		if ( 'registered' === $list ) {
+			return true;
+		}
+		return (bool) $wbcom_credits_test_scripts[ $handle ]['enqueued'];
+	}
+}
+
+if ( ! function_exists( 'wp_localize_script' ) ) {
+	function wp_localize_script( string $handle, string $object_name, array $l10n ): bool {
+		global $wbcom_credits_test_scripts;
+		if ( ! isset( $wbcom_credits_test_scripts[ $handle ] ) ) {
+			return false;
+		}
+		$existing = $wbcom_credits_test_scripts[ $handle ]['data']['data'] ?? '';
+		$wbcom_credits_test_scripts[ $handle ]['data']['data'] = $existing . 'var ' . $object_name . ' = ' . wp_json_encode( $l10n ) . ';';
+		return true;
+	}
+}
+
+if ( ! class_exists( 'WP_Scripts' ) ) {
+	class WP_Scripts {
+		public function get_data( string $handle, string $key ) {
+			global $wbcom_credits_test_scripts;
+			return $wbcom_credits_test_scripts[ $handle ]['data'][ $key ] ?? false;
+		}
+	}
+}
+
+if ( ! function_exists( 'wp_scripts' ) ) {
+	function wp_scripts(): WP_Scripts {
+		static $instance = null;
+		if ( null === $instance ) {
+			$instance = new WP_Scripts();
+		}
+		return $instance;
+	}
+}
+
+if ( ! function_exists( 'rest_url' ) ) {
+	function rest_url( string $path = '' ): string {
+		return 'http://example.org/wp-json/' . ltrim( $path, '/' );
+	}
+}
+
+if ( ! function_exists( 'wp_create_nonce' ) ) {
+	function wp_create_nonce( string $action = '-1' ): string {
+		return 'test-nonce-' . md5( $action );
+	}
+}
+
+if ( ! function_exists( 'plugins_url' ) ) {
+	function plugins_url( string $path = '', string $plugin = '' ): string {
+		return 'http://example.org/wp-content/plugins/wbcom-credits-sdk/' . ltrim( $path, '/' );
 	}
 }
 
@@ -311,3 +460,17 @@ require_once __DIR__ . '/../src/Gateways/Transaction_Log.php';
 require_once __DIR__ . '/../src/Gateways/Abstract_Gateway.php';
 require_once __DIR__ . '/../src/Gateways/Stripe.php';
 require_once __DIR__ . '/../src/Gateways/Pricing.php';
+
+// Adapters — the production loader (wbcom-credits-sdk.php) maps these by
+// class name rather than by PSR-4 filename convention because the adapter
+// class names (e.g. WooCommerceAdapter) intentionally don't match their
+// filenames (e.g. WooCommerce.php). Composer's PSR-4 autoloader can't
+// resolve that mismatch, so Registry::boot_all() — which unconditionally
+// constructs Adapters\AdapterRegistry — needs these required explicitly
+// here too, the same way the real bootstrap does.
+require_once __DIR__ . '/../src/Adapters/AdapterInterface.php';
+require_once __DIR__ . '/../src/Adapters/WooCommerce.php';
+require_once __DIR__ . '/../src/Adapters/WooSubscriptions.php';
+require_once __DIR__ . '/../src/Adapters/WooMemberships.php';
+require_once __DIR__ . '/../src/Adapters/PMPro.php';
+require_once __DIR__ . '/../src/Adapters/MemberPress.php';

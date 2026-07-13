@@ -4,6 +4,14 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-13
+
+### Added (frontend checkout)
+
+- **Reusable JS checkout helper (`assets/js/checkout.js`).** Registers a `window.wbcomCreditsCheckout({ slug, gateway, pack_id, credits, returnUrl })` global that POSTs to `/{slug}/checkout/{gateway}` (with `X-WP-Nonce`), then redirects the browser to the hosted checkout URL the SDK returns. `Registry` registers (not enqueues) a `wbcom-credits-checkout` script handle localized with `wbcomCreditsCfg = { restRoot, nonce }`, once per request regardless of consumer count; consuming plugins call `wp_enqueue_script('wbcom-credits-checkout')` where they render a buy button. This is the browser half of the existing `/checkout/{gateway}` REST route — no consumer has to hand-roll the fetch/redirect.
+- **Reusable admin pack-editor (`Gateways\Pack_Admin_Renderer`).** `render( $option_name )` echoes an escaped, dependency-free fieldset for credit packs ({credits, price}) plus a custom-amount group (enabled / per-credit rate / min / max) and currency; `sanitize()` (hand it to `register_setting()`) normalizes the POST into the exact `pricing`-shaped array `Pricing::resolve()` consumes, dropping rows with non-positive credits or price. Consuming plugins get the packs + custom-amount admin UI without rebuilding it.
+- See `docs/CONSUMER_FRONTEND_CHECKOUT.md` for the end-to-end wiring recipe.
+
 ### Fixed (money-path)
 
 - **[CRITICAL] Atomic webhook idempotency.** `Gateways\Idempotency` used an option-backed FIFO ring with a read-modify-write (`get_option` → `in_array` → `update_option`). Two concurrent deliveries of the same provider event could both pass `is_processed()` and both credit the user. Idempotency now uses a dedicated `{prefix}_credit_processed_events` table with a `UNIQUE (slug, gateway, event_id)` key (new `Gateways\Processed_Events` class). `mark_processed()` performs a single `INSERT IGNORE` and returns `true` only when a row was newly inserted (`rows_affected === 1`) — so exactly one of N racing deliveries wins the claim and the rest are rejected. `Abstract_Gateway::handle_webhook()` now **claims the event atomically BEFORE any ledger write** (claim-then-act); the post-credit `mark_processed()` calls were removed. `is_processed()` is retained as a cheap pre-check only. `Idempotency`'s public API (`is_processed`, `mark_processed`, `reset_for_tests`) is unchanged — it is now a thin facade over `Processed_Events`.
