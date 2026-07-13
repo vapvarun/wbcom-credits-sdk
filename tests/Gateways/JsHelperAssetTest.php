@@ -88,5 +88,14 @@ final class JsHelperAssetTest extends TestCase {
 		do_action( 'wp_enqueue_scripts' );
 
 		$this->assertTrue( wp_script_is( 'wbcom-credits-checkout', 'registered' ) );
+
+		// The real assertion: the wp_script_is() guard in Registry::boot_all()
+		// must stop the second consumer's closure from re-registering +
+		// re-localizing the shared handle. wp_localize_script() appends to
+		// the handle's 'data' rather than overwriting it, so if the guard
+		// were removed the config object would be localized twice and show
+		// up twice in the concatenated data string.
+		$data = (string) wp_scripts()->get_data( 'wbcom-credits-checkout', 'data' );
+		$this->assertSame( 1, substr_count( $data, 'wbcomCreditsCfg' ), 'Config must be localized exactly once (double-registration guard).' );
 	}
 }

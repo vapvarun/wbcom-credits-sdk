@@ -227,6 +227,12 @@ $wbcom_credits_test_scripts = array();
 if ( ! function_exists( 'wp_register_script' ) ) {
 	function wp_register_script( string $handle, string $src, array $deps = array(), $ver = false, bool $in_footer = false ): bool {
 		global $wbcom_credits_test_scripts;
+		// Mirror WP_Scripts::add(): re-registering an already-registered
+		// handle is a no-op (returns false, existing entry incl. any
+		// localized 'data' is left untouched) rather than resetting it.
+		if ( isset( $wbcom_credits_test_scripts[ $handle ] ) ) {
+			return false;
+		}
 		$wbcom_credits_test_scripts[ $handle ] = array(
 			'src'       => $src,
 			'deps'      => $deps,
