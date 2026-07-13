@@ -4,6 +4,21 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-07-13
+
+### Fixed
+
+- **[HIGH] PMPro + MemberPress adapter idempotency is now atomic (parity with WooCommerce).** `PMProAdapter::on_level_change()` and `on_subscription_payment()` deduped with a read-then-write user-meta flag (`get_user_meta()` → `topup()` → `update_user_meta()`); `MemberPressAdapter::on_transaction_completed()` deduped with a `note LIKE '%...%'` scan of the SDK ledger table. Both are read-modify-write guards with a TOCTOU window: two concurrent deliveries of the same event (a retried PMPro level-change hook, or a replayed MemberPress transaction event) could both read "not processed" before either saved, and both top up. All three adapter methods now route dedupe through the same atomic `Gateways\Processed_Events::claim()` (UNIQUE `INSERT IGNORE`) that the WooCommerce adapters and the gateway webhook path already use — claiming FIRST, before the credits lookup, under a stable per-event id (`pmpro:level:{user}:{level}:{date}`, `pmpro:order:{order_id}`, `mepr:txn:{txn_id}`) tagged `adapter:{id}`. PMPro's legacy meta flag is retained as a human-readable support/reconciliation marker but is no longer the guard. MemberPress's non-atomic `is_already_processed()` ledger scan is removed (dead code once the atomic claim replaces it). The processed-events table is already created at boot for every consumer, so no schema change is needed.
+
+### Added
+
+- **Gateway parity matrix test (`tests/Gateways/GatewayParityMatrixTest.php`).** Drives the real `Stripe` and `PayPal` gateway classes through equivalent checkout-completed and refund events via the shared `Abstract_Gateway::handle_webhook()` orchestration, and asserts the domain outcome (credits topped up / revoked, `Transaction_Log` row shape, `wbcom_credits_refunded` payload) is identical for both providers. Locks the guarantee that `normalize_event()` is the only place Stripe and PayPal are allowed to diverge — no divergence was found in the shared path.
+
+### Tests
+
+- `tests/Adapters/AdapterIdempotencyTest.php` extended with concurrent-delivery cases for PMPro `on_level_change`, PMPro `on_subscription_payment`, and MemberPress `on_transaction_completed` — for each, N racing deliveries of the same event credit the user exactly once.
+- `tests/Gateways/GatewayParityMatrixTest.php` (new) — see Added above.
+
 ## [1.4.0] - 2026-07-13
 
 ### Added (frontend checkout)

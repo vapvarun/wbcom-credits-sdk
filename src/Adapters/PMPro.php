@@ -10,6 +10,8 @@ declare( strict_types=1 );
 
 namespace Wbcom\Credits\Adapters;
 
+use Wbcom\Credits\Gateways\Processed_Events;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -93,6 +95,15 @@ final class PMProAdapter implements AdapterInterface {
 	 * Awards credits when a user is assigned a new membership level.
 	 * Does not process cancellations (level_id = 0).
 	 *
+	 * Double-processing is guarded by an ATOMIC claim, not a read-then-write
+	 * user-meta flag. A `get_user_meta()` … `update_user_meta()` guard has a
+	 * TOCTOU window: two concurrent deliveries of the same level change (e.g.
+	 * a retried `pmpro_after_change_membership_level` hook) can both read
+	 * "not granted today" before either saves, and both top up.
+	 * {@see Processed_Events::claim()} is a UNIQUE `INSERT IGNORE` that
+	 * returns true for exactly one of N racing deliveries — so we claim
+	 * FIRST and only credit when we won the claim.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param int $level_id New membership level ID (0 on cancellation).
@@ -105,12 +116,10 @@ final class PMProAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Prevent double-processing via user meta.
-		$meta_key   = '_wbcom_credits_pmpro_level_' . $level_id;
-		$last_grant = get_user_meta( $user_id, $meta_key, true );
-		$today      = wp_date( 'Y-m-d' );
+		$today = wp_date( 'Y-m-d' );
 
-		if ( $last_grant === $today ) {
+		// Atomic dedupe: claim BEFORE crediting, once per user+level+day.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:level:' . $user_id . ':' . $level_id . ':' . $today ) ) {
 			return;
 		}
 
@@ -126,7 +135,12 @@ final class PMProAdapter implements AdapterInterface {
 			);
 
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
-			update_user_meta( $user_id, $meta_key, $today );
+
+			// Keep the legacy meta flag as a human-readable marker for
+			// support / reconciliation. It is NO LONGER the dedupe guard —
+			// the atomic claim above is — so a save() failure here cannot
+			// cause a double top-up.
+			update_user_meta( $user_id, '_wbcom_credits_pmpro_level_' . $level_id, $today );
 		}
 	}
 
@@ -135,6 +149,9 @@ final class PMProAdapter implements AdapterInterface {
 	 *
 	 * Awards credits on each successful renewal payment. Uses the order's
 	 * membership level to determine the credit amount.
+	 *
+	 * Double-processing is guarded by an ATOMIC claim — see
+	 * {@see on_level_change()} for why a read-then-write meta flag is unsafe.
 	 *
 	 * @since 1.0.0
 	 *
@@ -153,10 +170,10 @@ final class PMProAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Prevent double-processing via order meta.
-		$order_id  = $order->id ?? 0;
-		$processed = get_user_meta( $user_id, '_wbcom_credits_pmpro_order_' . $order_id, true );
-		if ( $processed ) {
+		$order_id = $order->id ?? 0;
+
+		// Atomic dedupe: claim BEFORE crediting.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:order:' . $order_id ) ) {
 			return;
 		}
 
@@ -171,6 +188,9 @@ final class PMProAdapter implements AdapterInterface {
 			);
 
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
+
+			// Keep the legacy meta flag as a human-readable marker for
+			// support / reconciliation. It is NO LONGER the dedupe guard.
 			update_user_meta( $user_id, '_wbcom_credits_pmpro_order_' . $order_id, '1' );
 		}
 	}

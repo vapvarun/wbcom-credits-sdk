@@ -114,4 +114,89 @@ final class AdapterIdempotencyTest extends TestCase {
 		self::assertTrue( Processed_Events::claim( self::SLUG, 'adapter:woo_subscriptions', 'woosub:order:3001' ), 'Distinct adapter tag must not collide on the same order id.' );
 		self::assertFalse( Processed_Events::claim( self::SLUG, 'adapter:woocommerce', 'woo:order:3001' ), 'Same tag + id must be deduped.' );
 	}
+
+	/**
+	 * Mirrors PMProAdapter::on_level_change() dedupe shape: claim
+	 * `adapter:pmpro` + `pmpro:level:{user}:{level}:{date}` THEN credit.
+	 */
+	private function deliver_pmpro_level_change( int $user_id, int $level_id, string $today, int $credits ): bool {
+		if ( ! Processed_Events::claim( self::SLUG, 'adapter:pmpro', 'pmpro:level:' . $user_id . ':' . $level_id . ':' . $today ) ) {
+			return false;
+		}
+		Credits::topup( self::SLUG, $user_id, $credits, 'pmpro level ' . $level_id );
+		return true;
+	}
+
+	/**
+	 * Mirrors PMProAdapter::on_subscription_payment() dedupe shape: claim
+	 * `adapter:pmpro` + `pmpro:order:{order_id}` THEN credit.
+	 */
+	private function deliver_pmpro_order( int $order_id, int $user_id, int $credits ): bool {
+		if ( ! Processed_Events::claim( self::SLUG, 'adapter:pmpro', 'pmpro:order:' . $order_id ) ) {
+			return false;
+		}
+		Credits::topup( self::SLUG, $user_id, $credits, 'pmpro order ' . $order_id );
+		return true;
+	}
+
+	/**
+	 * Mirrors MemberPressAdapter::on_transaction_completed() dedupe shape:
+	 * claim `adapter:memberpress` + `mepr:txn:{txn_id}` THEN credit.
+	 */
+	private function deliver_memberpress_txn( int $txn_id, int $user_id, int $credits ): bool {
+		if ( ! Processed_Events::claim( self::SLUG, 'adapter:memberpress', 'mepr:txn:' . $txn_id ) ) {
+			return false;
+		}
+		Credits::topup( self::SLUG, $user_id, $credits, 'mepr txn ' . $txn_id );
+		return true;
+	}
+
+	public function test_pmpro_level_change_concurrent_deliveries_credit_once(): void {
+		$user_id = 44;
+		$today   = '2026-07-13';
+		$winners = 0;
+
+		// 5 racing deliveries of the SAME level-change event on the same day
+		// (e.g. a retried pmpro_after_change_membership_level hook). Exactly
+		// one must win the claim and credit.
+		for ( $i = 0; $i < 5; $i++ ) {
+			if ( $this->deliver_pmpro_level_change( $user_id, 7, $today, 30 ) ) {
+				++$winners;
+			}
+		}
+
+		self::assertSame( 1, $winners, 'Exactly one of N concurrent PMPro level-change deliveries may credit.' );
+		self::assertSame( 30, Credits::get_balance( self::SLUG, $user_id ), 'PMPro level change must be credited exactly once.' );
+	}
+
+	public function test_pmpro_subscription_payment_concurrent_deliveries_credit_once(): void {
+		$user_id = 45;
+		$winners = 0;
+
+		// 5 racing deliveries of the SAME recurring-payment order.
+		for ( $i = 0; $i < 5; $i++ ) {
+			if ( $this->deliver_pmpro_order( 5001, $user_id, 20 ) ) {
+				++$winners;
+			}
+		}
+
+		self::assertSame( 1, $winners, 'Exactly one of N concurrent PMPro order deliveries may credit.' );
+		self::assertSame( 20, Credits::get_balance( self::SLUG, $user_id ), 'PMPro recurring payment must be credited exactly once.' );
+	}
+
+	public function test_memberpress_transaction_completed_concurrent_deliveries_credit_once(): void {
+		$user_id = 46;
+		$winners = 0;
+
+		// 5 racing deliveries of the SAME MemberPress transaction (replays of
+		// mepr_event_transaction_completed).
+		for ( $i = 0; $i < 5; $i++ ) {
+			if ( $this->deliver_memberpress_txn( 6001, $user_id, 15 ) ) {
+				++$winners;
+			}
+		}
+
+		self::assertSame( 1, $winners, 'Exactly one of N concurrent MemberPress transaction deliveries may credit.' );
+		self::assertSame( 15, Credits::get_balance( self::SLUG, $user_id ), 'MemberPress transaction must be credited exactly once.' );
+	}
 }

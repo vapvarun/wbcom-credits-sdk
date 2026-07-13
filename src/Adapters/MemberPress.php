@@ -10,6 +10,8 @@ declare( strict_types=1 );
 
 namespace Wbcom\Credits\Adapters;
 
+use Wbcom\Credits\Gateways\Processed_Events;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -92,8 +94,16 @@ final class MemberPressAdapter implements AdapterInterface {
 	/**
 	 * Handle a completed MemberPress transaction event.
 	 *
-	 * Extracts the transaction from the event, checks for double-processing
-	 * against the SDK's ledger table, and tops up credits.
+	 * Extracts the transaction from the event, atomically claims the
+	 * transaction id to guard against double-processing, and tops up
+	 * credits.
+	 *
+	 * Double-processing was previously guarded by a `note LIKE '%...%'`
+	 * scan of the SDK ledger table — a non-atomic read-then-write that two
+	 * concurrent deliveries of the same transaction could both pass before
+	 * either topped up. {@see Processed_Events::claim()} is a UNIQUE
+	 * `INSERT IGNORE` that returns true for exactly one of N racing
+	 * deliveries — so we claim FIRST and only credit when we won the claim.
 	 *
 	 * @since 1.0.0
 	 *
@@ -119,8 +129,8 @@ final class MemberPressAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Double-processing check: query the SDK ledger table for a matching note.
-		if ( $this->is_already_processed( $user_id, $txn_id ) ) {
+		// Atomic dedupe: claim BEFORE crediting.
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'mepr:txn:' . $txn_id ) ) {
 			return;
 		}
 
@@ -136,35 +146,6 @@ final class MemberPressAdapter implements AdapterInterface {
 
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
 		}
-	}
-
-	/**
-	 * Check if a MemberPress transaction has already been processed.
-	 *
-	 * Queries the SDK ledger table for a topup entry referencing this transaction.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param int $user_id WordPress user ID.
-	 * @param int $txn_id  MemberPress transaction ID.
-	 * @return bool True if already processed.
-	 */
-	private function is_already_processed( int $user_id, int $txn_id ): bool {
-		global $wpdb;
-
-		$table = \Wbcom\Credits\Ledger::table_name( $this->prefix );
-		$note  = sprintf( 'MemberPress transaction #%d', $txn_id );
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$existing = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT id FROM {$table} WHERE user_id = %d AND entry_type = 'topup' AND note LIKE %s LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-				$user_id,
-				'%' . $wpdb->esc_like( $note ) . '%'
-			)
-		);
-
-		return (bool) $existing;
 	}
 
 	/**
