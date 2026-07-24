@@ -44,6 +44,7 @@ $wbcom_credits_sdk_classes = array(
 	'\\Wbcom\\Credits\\Versions'                          => __DIR__ . '/src/Versions.php',
 	'\\Wbcom\\Credits\\Registry'                          => __DIR__ . '/src/Registry.php',
 	'\\Wbcom\\Credits\\Ledger'                            => __DIR__ . '/src/Ledger.php',
+	'\\Wbcom\\Credits\\Money'                             => __DIR__ . '/src/Money.php',
 	'\\Wbcom\\Credits\\Credits'                           => __DIR__ . '/src/Credits.php',
 	'\\Wbcom\\Credits\\Consumer'                          => __DIR__ . '/src/Consumer.php',
 	'\\Wbcom\\Credits\\REST'                              => __DIR__ . '/src/REST.php',

@@ -604,6 +604,53 @@ A second refund event for the same `event_id` is a no-op (idempotency), and a re
 
 ---
 
+## What a credit is worth (money vs tokens)
+
+The ledger column is `amount INT`. That is deliberate — an append-only ledger of
+integers cannot drift the way summed floats do — and it means the SDK never
+guesses what a credit is worth. **A credit is whatever unit the consumer
+registers.**
+
+Two models, and the difference matters:
+
+**Token model** — "10 credits = 10 downloads". Integers already mean what you
+want. Nothing else to do.
+
+**Money model** — a credit IS a currency amount. Store **minor units** (cents),
+never a decimal, exactly as payment processors do. Casting `147.35` to an int
+stores `147` and loses 35 cents on every single transaction. Use the `Money`
+helper so each plugin does not reinvent this and get the edge cases wrong:
+
+```php
+use Wbcom\Credits\Money;
+use Wbcom\Credits\Credits;
+
+// Writing: convert at your own boundary.
+$minor = Money::to_minor( 147.35, 'USD' );   // 14735
+Credits::topup( 'my-plugin', $user_id, $minor, 'Wallet top-up' );
+
+// Reading: convert back for display.
+$balance = Money::to_major( Credits::get_balance( 'my-plugin', $user_id ), 'USD' );
+```
+
+Why not a bare `* 100`:
+
+- **Not every currency has two decimals.** JPY, KRW and VND have no minor unit
+  (¥100 is 100 yen, not 10,000); the Gulf dinars (KWD, BHD, OMR, TND) use three.
+  `Money::decimals_for()` returns 0, 2 or 3, filterable via
+  `wbcom_credits_currency_decimals`.
+- **Floats lie.** `147.35 * 100` is `14734.999999999998`, so a cast truncates the
+  cent straight back off. `Money::to_minor()` rounds.
+
+**The SDK does not convert for you.** Doing so would silently change the meaning
+of every existing ledger row in every plugin already using the SDK. You opt in at
+your own boundary.
+
+**Contract:** for a money-denominated consumer, *every* row for that consumer
+must be in the same minor units — including rows written by the payment adapters
+and gateways, which call `Credits::topup()` directly. Mixing units within one
+consumer's ledger is what makes a balance wrong.
+
 ## Database
 
 The SDK creates one table per consuming plugin: `{wp_prefix}{plugin_prefix}_credit_ledger`
