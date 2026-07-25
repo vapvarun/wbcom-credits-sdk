@@ -4,6 +4,14 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- **First-class "money mode" so money-denominated consumers can't mix major/minor units (#3).** `Money` (1.5.0) gave consumers a correct converter, but using it was opt-in at every entry point — admin add, the consumer's webhook, the payment adapters — and missing any one silently mixes minor and major units, corrupting a balance (found in a live consumer: `(int) 0.5` stored 0 credits on a "success"). A consumer now declares its ledger is money once — `'money' => array( 'currency' => 'USD' )` (an ISO code or a callable) — and uses the new convenience API that converts MAJOR-unit amounts to the ledger's integer MINOR units through `Money` at a single enforced boundary: `Credits::topup_money()`, `hold_money()`, `deduct_money()`, `refund_money()`, `adjust_money()`, and `balance_money()` (reads back as a major-unit float), plus `Credits::is_money()`. Currency resolves from the call argument, else the consumer's `money.currency`, else USD. Token consumers that register no `money` key are unaffected — the integer `topup()/deduct()/refund()` behave exactly as before. Ledger stays `amount INT`. Additive; no schema change.
+
+### Tests
+
+- `tests/Credits/CreditsMoneyModeTest.php` (new) — locks: sub-unit top-ups are not lost (0.5 → 50 minor, the truncation bug), USD 147.35 → 14735 round-trips, zero-decimal (JPY, no ×100) and three-decimal (KWD, via a callable currency) conversion, the hold→deduct→refund money lifecycle, signed `adjust_money`, and `is_money()` gating.
+
 ## [1.4.2] - 2026-07-13
 
 ### Added

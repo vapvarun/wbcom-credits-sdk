@@ -363,6 +363,162 @@ final class Credits {
 		return (string) apply_filters( 'wbcom_credits_purchase_url', $url, $slug );
 	}
 
+	// -------------------------------------------------------------------------
+	// Money-denominated helpers
+	//
+	// For consumers whose credits ARE a currency amount. They register a
+	// `money` config once — `'money' => array( 'currency' => 'USD' )` (a code
+	// or a callable) — and then use these variants, which convert major-unit
+	// amounts to the ledger's integer minor units via {@see Money} at a single
+	// enforced boundary. This is what stops a money consumer from mixing minor
+	// and major units across its several entry points (admin add, webhook,
+	// adapters), which silently corrupts a balance. Token consumers ignore all
+	// of this and keep using the integer topup()/deduct()/refund() directly.
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Whether a consumer's ledger is money-denominated (registered `money`).
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string $slug Plugin slug.
+	 * @return bool
+	 */
+	public static function is_money( string $slug ): bool {
+		$config = Registry::instance()->get( $slug );
+		return ! empty( $config['money'] );
+	}
+
+	/**
+	 * Top up a money-denominated balance from a MAJOR-unit amount.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string           $slug     Plugin slug.
+	 * @param int              $user_id  WordPress user ID.
+	 * @param float|int|string $amount   Amount in major units (e.g. 147.35).
+	 * @param string           $currency Optional ISO 4217 code; falls back to the consumer's money.currency.
+	 * @param string           $note     Description.
+	 * @return int|false Inserted row ID or false.
+	 */
+	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
+		return self::topup( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $note );
+	}
+
+	/**
+	 * Reserve (hold) a money-denominated amount using a MAJOR-unit amount.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string           $slug     Plugin slug.
+	 * @param int              $user_id  WordPress user ID.
+	 * @param float|int|string $amount   Amount in major units.
+	 * @param int              $item_id  Associated item ID.
+	 * @param string           $currency Optional ISO 4217 code.
+	 * @param string           $note     Description.
+	 * @return int|false Inserted row ID or false.
+	 */
+	public static function hold_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false {
+		return self::hold( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $item_id, $note );
+	}
+
+	/**
+	 * Deduct from a money-denominated balance using a MAJOR-unit amount.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string           $slug     Plugin slug.
+	 * @param int              $user_id  WordPress user ID.
+	 * @param float|int|string $amount   Amount in major units.
+	 * @param int              $item_id  Associated item ID.
+	 * @param string           $currency Optional ISO 4217 code.
+	 * @param string           $note     Description.
+	 * @return bool
+	 */
+	public static function deduct_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): bool {
+		return self::deduct( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $item_id, $note );
+	}
+
+	/**
+	 * Refund to a money-denominated balance using a MAJOR-unit amount.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string           $slug     Plugin slug.
+	 * @param int              $user_id  WordPress user ID.
+	 * @param float|int|string $amount   Amount in major units.
+	 * @param int              $item_id  Associated item ID.
+	 * @param string           $currency Optional ISO 4217 code.
+	 * @param string           $note     Description.
+	 * @return int|false Inserted row ID or false.
+	 */
+	public static function refund_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false {
+		return self::refund( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $item_id, $note );
+	}
+
+	/**
+	 * Adjust a money-denominated balance by a signed MAJOR-unit delta.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string           $slug     Plugin slug.
+	 * @param int              $user_id  WordPress user ID.
+	 * @param float|int|string $amount   Signed amount in major units.
+	 * @param string           $currency Optional ISO 4217 code.
+	 * @param string           $note     Description.
+	 * @return int|false Inserted row ID or false.
+	 */
+	public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
+		$currency_code = self::resolve_money_currency( $slug, $currency );
+		$sign          = ( (float) $amount < 0 ) ? -1 : 1;
+		$minor         = $sign * Money::to_minor( abs( (float) $amount ), $currency_code );
+		return self::adjust( $slug, $user_id, $minor, $note );
+	}
+
+	/**
+	 * Read a money-denominated balance as a MAJOR-unit amount for display.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string $slug     Plugin slug.
+	 * @param int    $user_id  WordPress user ID.
+	 * @param string $currency Optional ISO 4217 code.
+	 * @return float Balance in major units.
+	 */
+	public static function balance_money( string $slug, int $user_id, string $currency = '' ): float {
+		return Money::to_major( self::get_balance( $slug, $user_id ), self::resolve_money_currency( $slug, $currency ) );
+	}
+
+	/**
+	 * Resolve the currency for a money-denominated operation.
+	 *
+	 * Explicit argument wins; otherwise the consumer's registered
+	 * `money.currency` (a code or a callable); otherwise USD.
+	 *
+	 * @since 1.5.0
+	 *
+	 * @param string $slug     Plugin slug.
+	 * @param string $currency Explicit override (may be empty).
+	 * @return string Upper-case ISO 4217 code.
+	 */
+	private static function resolve_money_currency( string $slug, string $currency ): string {
+		if ( '' !== $currency ) {
+			return strtoupper( $currency );
+		}
+
+		$config   = Registry::instance()->get( $slug );
+		$money    = is_array( $config['money'] ?? null ) ? $config['money'] : array();
+		$resolved = $money['currency'] ?? '';
+
+		if ( is_callable( $resolved ) ) {
+			$resolved = call_user_func( $resolved );
+		}
+
+		$resolved = strtoupper( trim( (string) $resolved ) );
+
+		return '' !== $resolved ? $resolved : 'USD';
+	}
+
 	/**
 	 * Get the DB table prefix for a plugin slug.
 	 *
