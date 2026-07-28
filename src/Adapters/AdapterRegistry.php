@@ -186,14 +186,54 @@ final class AdapterRegistry {
 				if ( (string) ( $row['item_id'] ?? '' ) !== (string) $item_id ) {
 					continue;
 				}
-				return (int) ( $row['credits'] ?? 0 );
+				return $this->to_ledger_units( (float) ( $row['credits'] ?? 0 ) );
 			}
 			return 0;
 		}
 
 		// Nested-map shape — direct index lookup.
 		$adapter_map = $mappings[ $adapter_id ] ?? array();
-		return (int) ( $adapter_map[ $item_id ] ?? 0 );
+		return $this->to_ledger_units( (float) ( $adapter_map[ $item_id ] ?? 0 ) );
+	}
+
+	/**
+	 * Convert a stored mapping value into the consumer's ledger units.
+	 *
+	 * Mapping values are authored by a site admin in a settings screen, so
+	 * they are MAJOR units by definition: an admin mapping a product to
+	 * "100" means 100 credits, and on a money-denominated consumer that is
+	 * $100.00 — not 100 cents.
+	 *
+	 * Every adapter feeds this value straight into the integer
+	 * `Credits::topup()`, which writes the ledger's minor units verbatim.
+	 * On a money consumer that turns a $100 mapping into $1.00. Converting
+	 * here rather than in each adapter means a new adapter cannot
+	 * reintroduce it, which is the same reason the money-mode API converts
+	 * at one enforced boundary.
+	 *
+	 * Token consumers (no `money` config) are unaffected: the amount is
+	 * returned as an int exactly as before.
+	 *
+	 * @since 1.5.1
+	 *
+	 * @param float $amount Stored mapping value, in major units.
+	 * @return int Amount in the consumer's ledger units.
+	 */
+	private function to_ledger_units( float $amount ): int {
+		if ( $amount <= 0 ) {
+			return 0;
+		}
+
+		if ( ! \Wbcom\Credits\Credits::is_money( $this->slug ) ) {
+			return (int) $amount;
+		}
+
+		$config   = \Wbcom\Credits\Registry::instance()->get( $this->slug );
+		$money    = is_array( $config['money'] ?? null ) ? $config['money'] : array();
+		$currency = $money['currency'] ?? '';
+		$currency = is_callable( $currency ) ? (string) $currency() : (string) $currency;
+
+		return \Wbcom\Credits\Money::to_minor( $amount, '' !== $currency ? $currency : 'USD' );
 	}
 
 	/**

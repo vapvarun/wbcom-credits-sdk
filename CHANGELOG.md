@@ -4,6 +4,12 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-28
+
+### Fixed
+
+- **Adapter and gateway credit mappings now convert to ledger units on money consumers.** 1.5.0 moved money consumers to `topup_money()`/`deduct_money()` and removed the per-consumer `ledger_scale` that used to scale amounts inside `Credits::topup()`. But the bundled adapters (WooCommerce, WooCommerce Subscriptions, WooCommerce Memberships, PMPro, MemberPress) and both gateways feed `AdapterRegistry::lookup_credits()` straight into the integer `Credits::topup()`, which writes the ledger's minor units verbatim — so an admin mapping a product to `100` credited **$1.00 instead of $100.00** on a money consumer. Mapping values are authored in a settings screen and are major units by definition, so `lookup_credits()` now converts them through `Money` when the consumer registered `money`. Converting there rather than in each adapter means a new adapter cannot reintroduce it — the same single-boundary rule the money-mode API follows. Token consumers (no `money` config) are returned the integer unchanged and are unaffected. No schema change, no data migration: stored mappings stay in major units, which is what the admin typed.
+
 ## [1.5.0] - 2026-07-28
 
 ### Added

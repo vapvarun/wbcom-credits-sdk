@@ -10,7 +10,7 @@
  * `wbcom_credits_sdk_registry` hook.
  *
  * @package Wbcom\Credits
- * @version 1.5.0
+ * @version 1.5.1
  * @license GPL-2.0+
  */
 
@@ -131,7 +131,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_4_2' ) && function_exists(
 	 */
 	function wbcom_credits_sdk_initialize_1_4_2(): void {
 		if ( ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-			define( 'WBCOM_CREDITS_SDK_VERSION', '1.5.0' );
+			define( 'WBCOM_CREDITS_SDK_VERSION', '1.5.1' );
 		}
 		if ( ! defined( 'WBCOM_CREDITS_SDK_PATH' ) ) {
 			define( 'WBCOM_CREDITS_SDK_PATH', __DIR__ );
