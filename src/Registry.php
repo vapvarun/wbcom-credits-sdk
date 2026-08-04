@@ -47,6 +47,12 @@ final class Registry {
 	 *     @type string          $file       Main plugin file path.
 	 *     @type string          $user_type  Label for credit holders, e.g. 'employer'.
 	 *     @type array           $consumers  Array of consumer definitions (what costs credits).
+	 *     @type string|callable $return_url Where buyers land after a direct-pay checkout when the
+	 *                                       request does not name a page — the plugin's own wallet
+	 *                                       or dashboard screen. A callable is invoked at checkout
+	 *                                       time so page IDs resolve live. Without it, the gateway
+	 *                                       falls back to its settings URL, then the site home —
+	 *                                       which is never where a buyer expects to land.
 	 *     @type array           $settings   Optional overrides: low_threshold, purchase_url, admin_settings_hook.
 	 * }
 	 * @return void
@@ -92,6 +98,28 @@ final class Registry {
 	 */
 	public function get( string $slug ): ?array {
 		return $this->plugins[ $slug ] ?? null;
+	}
+
+	/**
+	 * Resolve the consumer-registered checkout return URL for a slug.
+	 *
+	 * The consuming plugin knows where its buyers top up — its own wallet
+	 * or dashboard screen — so it registers that page and every checkout
+	 * without an explicit request return_url lands there instead of the
+	 * site home.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug Plugin slug.
+	 * @return string Absolute URL, or '' when none is registered.
+	 */
+	public function return_url_for( string $slug ): string {
+		$registered = $this->plugins[ $slug ]['return_url'] ?? '';
+		if ( is_callable( $registered ) ) {
+			$registered = call_user_func( $registered );
+		}
+
+		return is_string( $registered ) ? $registered : '';
 	}
 
 	/**

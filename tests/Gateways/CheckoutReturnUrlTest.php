@@ -98,6 +98,34 @@ final class CheckoutReturnUrlTest extends TestCase {
 		self::assertSame( '100', $query['credits'] );
 	}
 
+	public function test_consumer_registered_return_url_resolves(): void {
+		$prop = new ReflectionProperty( Registry::class, 'instance' );
+		$prop->setAccessible( true );
+		$prop->setValue( null, null );
+
+		Registry::instance()->register(
+			array(
+				'slug'       => 'walleted-plug',
+				'prefix'     => 'wlpg',
+				'return_url' => static fn (): string => 'https://example.test/dashboard/?tab=wallet',
+			)
+		);
+		Registry::instance()->register(
+			array(
+				'slug'   => 'plain-plug',
+				'prefix' => 'plpg',
+			)
+		);
+
+		self::assertSame(
+			'https://example.test/dashboard/?tab=wallet',
+			Registry::instance()->return_url_for( 'walleted-plug' ),
+			'A consumer-registered wallet page is where its buyers land after checkout.'
+		);
+		self::assertSame( '', Registry::instance()->return_url_for( 'plain-plug' ) );
+		self::assertSame( '', Registry::instance()->return_url_for( 'unregistered' ) );
+	}
+
 	public function test_home_url_fallback_also_carries_gateway_marker(): void {
 		$query = $this->checkout_success_query( null );
 

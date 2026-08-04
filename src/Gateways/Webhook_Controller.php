@@ -162,6 +162,13 @@ final class Webhook_Controller {
 			}
 		}
 
+		// No (valid) request return_url: fall back to the page the consumer
+		// registered — its own wallet/dashboard, where its buyers top up and
+		// expect to land. Server-registered, so no host validation needed.
+		if ( '' === $return_url ) {
+			$return_url = \Wbcom\Credits\Registry::instance()->return_url_for( $this->slug );
+		}
+
 		try {
 			$url = $gateway->create_checkout(
 				$this->slug,
