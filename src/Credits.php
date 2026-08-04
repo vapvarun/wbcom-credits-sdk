@@ -546,6 +546,23 @@ final class Credits {
 	}
 
 	/**
+	 * Public cache invalidation for consumers that write ledger rows
+	 * directly via {@see Ledger::insert()} rather than the Credits API
+	 * (e.g. bridges with their own charge/refund semantics). Without this
+	 * a consumer-side write leaves get_balance() stale for the rest of
+	 * the request.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @return void
+	 */
+	public static function forget_balance( string $slug, int $user_id ): void {
+		self::invalidate_cache( $slug, $user_id );
+	}
+
+	/**
 	 * Fire low balance action if balance is below threshold.
 	 *
 	 * @since 1.0.0
