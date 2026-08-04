@@ -434,6 +434,25 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 	}
 }
 
+// HTTP stubs for gateway provider lookups (redirect-claim tests). A test
+// queues responses keyed by "METHOD url" in $wbcom_credits_test_http;
+// unqueued URLs return a WP_Error so no test can silently hit the network.
+global $wbcom_credits_test_http;
+$wbcom_credits_test_http = array();
+
+if ( ! function_exists( 'wp_remote_get' ) ) {
+	function wp_remote_get( string $url, array $args = array() ) {
+		global $wbcom_credits_test_http;
+		return $wbcom_credits_test_http[ 'GET ' . $url ] ?? new \WP_Error( 'no_http_stub', 'No stubbed response for GET ' . $url );
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	function wp_remote_retrieve_body( $response ): string {
+		return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
+	}
+}
+
 require_once __DIR__ . '/Support/FakeWpdb.php';
 
 if ( ! defined( 'ABSPATH' ) ) {

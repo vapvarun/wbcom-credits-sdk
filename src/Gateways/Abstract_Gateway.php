@@ -92,6 +92,18 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			);
 		}
 
+		// Session-scoped idempotency claim, shared by BOTH crediting paths
+		// (webhook delivery and the synchronous redirect claim added in
+		// 1.6.0). The provider-event-id claim in handle_webhook() cannot
+		// serialize a webhook racing a redirect claim — the two carry
+		// different ids for the same payment — so the session id is the key
+		// both paths contend on. Exactly one caller wins and credits; the
+		// loser acks as a duplicate. Same atomic INSERT IGNORE mechanism as
+		// the event claim.
+		if ( ! Idempotency::mark_processed( $slug, $this->get_id(), 'session:' . $event->session_id ) ) {
+			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
+		}
+
 		$ledger_id = Credits::topup(
 			$slug,
 			(int) $expected['user_id'],
@@ -280,6 +292,76 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			),
 			200
 		);
+	}
+
+	// -------------------------------------------------------------------------
+	// Synchronous redirect claim (1.6.0)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Ask the provider whether a checkout session has been paid, without a
+	 * webhook — the synchronous half of credit granting.
+	 *
+	 * Gateways that can verify a session server-side (Stripe: retrieve the
+	 * Checkout Session with the secret key) override this and return a
+	 * checkout-completed {@see Gateway_Event} when — and only when — the
+	 * provider confirms payment. Gateways that cannot verify synchronously
+	 * keep this default and stay webhook-only.
+	 *
+	 * The returned event has an empty event_id (a session lookup is not a
+	 * provider event); idempotency for this path is carried by the
+	 * session-scoped claim inside {@see process_checkout_completed()}.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug       Consumer plugin slug.
+	 * @param string $session_id Provider checkout/session id.
+	 * @return Gateway_Event|null Paid checkout event, or null when the
+	 *                            gateway cannot confirm payment (unpaid,
+	 *                            unknown, or verification unsupported).
+	 */
+	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
+		return null;
+	}
+
+	/**
+	 * Credit a checkout on redirect-return, verified against the provider.
+	 *
+	 * Webhooks remain the canonical path, but a site owner who never
+	 * configures one (or whose site the provider cannot reach — local,
+	 * staging, firewalled) must still deliver credits the moment the buyer
+	 * returns: taking the payment and granting nothing is the worst
+	 * failure a payment feature can have. This claim path trusts nothing
+	 * from the browser except the session id — payment state, amount, and
+	 * currency all come from the provider lookup and are cross-checked
+	 * against Pending_Checkouts exactly like a webhook delivery.
+	 *
+	 * Double-crediting against a racing webhook is impossible: both paths
+	 * pass through {@see process_checkout_completed()}, which atomically
+	 * claims the session id before writing the ledger.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug       Consumer plugin slug.
+	 * @param string $session_id Provider checkout/session id.
+	 * @return \WP_REST_Response Same envelope process_checkout_completed()
+	 *                           returns, or `{pending: true}` (202) when the
+	 *                           provider has not confirmed payment yet.
+	 */
+	public function claim_checkout( string $slug, string $session_id ): \WP_REST_Response {
+		$event = $this->retrieve_checkout_event( $slug, $session_id );
+		if ( null === $event ) {
+			return new \WP_REST_Response(
+				array(
+					'received' => true,
+					'pending'  => true,
+					'note'     => 'Payment not confirmed by the provider yet. Credits land when it confirms (or via webhook).',
+				),
+				202
+			);
+		}
+
+		return $this->process_checkout_completed( $slug, $event );
 	}
 
 	// -------------------------------------------------------------------------

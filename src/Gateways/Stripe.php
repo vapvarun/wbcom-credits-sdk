@@ -246,6 +246,59 @@ final class Stripe extends Abstract_Gateway {
 	}
 
 	/**
+	 * Verify a Checkout Session directly against the Stripe API.
+	 *
+	 * The synchronous half of credit granting (SDK 1.6.0): when the buyer
+	 * returns from Stripe with a session id, retrieve the session with the
+	 * SECRET key and only report a checkout-completed event when Stripe
+	 * itself says `payment_status: paid`. Nothing from the browser is
+	 * trusted — amount and currency come from this lookup and are then
+	 * cross-checked against Pending_Checkouts by the orchestrator.
+	 *
+	 * event_id is empty on purpose — a session retrieval is not a provider
+	 * event; the session-scoped idempotency claim in
+	 * process_checkout_completed() dedupes this path against webhooks.
+	 *
+	 * @since 1.6.0
+	 */
+	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
+		$settings = $this->get_settings_for_slug( $slug );
+		$secret   = $this->secret_key( $settings );
+		if ( '' === $secret || '' === $session_id ) {
+			return null;
+		}
+
+		$lookup = wp_remote_get(
+			'https://api.stripe.com/v1/checkout/sessions/' . rawurlencode( $session_id ),
+			array(
+				'headers' => array( 'Authorization' => 'Bearer ' . $secret ),
+				'timeout' => 15,
+			)
+		);
+		if ( is_wp_error( $lookup ) ) {
+			return null;
+		}
+
+		$session = json_decode( (string) wp_remote_retrieve_body( $lookup ), true );
+		if ( ! is_array( $session ) || empty( $session['id'] ) || (string) $session['id'] !== $session_id ) {
+			return null;
+		}
+		if ( 'paid' !== ( $session['payment_status'] ?? '' ) ) {
+			return null;
+		}
+
+		return new Gateway_Event(
+			type: Gateway_Event::TYPE_CHECKOUT_COMPLETED,
+			event_id: '',
+			session_id: (string) $session['id'],
+			amount_cents: (int) ( $session['amount_total'] ?? 0 ),
+			currency: strtoupper( (string) ( $session['currency'] ?? '' ) ),
+			raw: $session,
+			provider_ref: (string) ( $session['payment_intent'] ?? '' )
+		);
+	}
+
+	/**
 	 * Issue a refund through the Stripe Refunds API.
 	 *
 	 * Stripe refunds the underlying PaymentIntent, not the Checkout

@@ -4,6 +4,17 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-04
+
+### Added
+
+- **Synchronous redirect claim — credits land without a webhook.** Before 1.6.0 the ONLY crediting path was the provider webhook, so a site whose owner never configured one (or that the provider cannot reach — local, staging, firewalled) captured real payments and granted nothing (found live as WB Ad Manager Basecamp card 10134503233). New `POST /{slug}/claim/{gateway}` (authenticated) verifies the returned `session_id` against the provider server-side and credits it: `Stripe::retrieve_checkout_event()` retrieves the Checkout Session with the SECRET key and only reports paid sessions; amount and currency are then cross-checked against `Pending_Checkouts` exactly like a webhook delivery — nothing from the browser is trusted but the session id. Buyers may only claim their own sessions (admins any); a claim for an already-credited session answers `{already: true}` from the `Transaction_Log` instead of an error. Gateways that cannot verify synchronously (PayPal, custom) inherit a default that answers `202 {pending: true}` and stay webhook-only.
+- **Session-scoped idempotency shared by both crediting paths.** The provider-event-id claim in `handle_webhook()` cannot serialize a webhook racing a redirect claim — they carry different ids for the same payment — so `process_checkout_completed()` now atomically claims `session:{id}` before any ledger write. Exactly one path credits; the loser acks as a duplicate. Locked by `CheckoutClaimTest::test_racing_webhook_and_claim_credit_exactly_once()`.
+
+### Fixed
+
+- **Version self-registration was stale.** The bootstrap registered itself with `Versions` as `1.4.2` while defining `WBCOM_CREDITS_SDK_VERSION` as `1.5.1`, so in a multi-bundle election this copy would lose to any copy registering >= 1.5.0 despite being newer. Registration string, initializer function names, and the constant now all carry the real version.
+
 ## [1.5.1] - 2026-07-28
 
 ### Fixed

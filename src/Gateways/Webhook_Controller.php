@@ -12,6 +12,12 @@
  *  POST  /{slug}/webhook/{gateway}   Public. Provider-signed; the
  *                                    signature is verified before any
  *                                    state changes.
+ *  POST  /{slug}/claim/{gateway}     Authenticated. Synchronous
+ *                                    redirect-return claim (1.6.0):
+ *                                    verifies the session against the
+ *                                    provider and credits it, so sites
+ *                                    without a working webhook still
+ *                                    deliver credits on return.
  *  POST  /{slug}/refund/{gateway}    Admin. Issues a provider-side
  *                                    refund. The provider's refund
  *                                    webhook is what actually adjusts
@@ -83,6 +89,24 @@ final class Webhook_Controller {
 				'permission_callback' => '__return_true', // signature is the auth
 				'args'                => array(
 					'gateway' => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_key' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/' . $this->slug . '/claim/(?P<gateway>[a-z0-9_-]+)',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'claim_checkout' ),
+				'permission_callback' => array( $this, 'check_logged_in' ),
+				'args'                => array(
+					'gateway'    => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_key' ),
+					// The ONLY input trusted from the browser. Payment state,
+					// amount, and currency come from the gateway's own
+					// provider lookup (retrieve_checkout_event) and are then
+					// cross-checked against Pending_Checkouts.
+					'session_id' => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ),
 				),
 			)
 		);
@@ -181,6 +205,61 @@ final class Webhook_Controller {
 		} finally {
 			remove_filter( 'wbcom_credits_active_slug', $active_slug_filter, 99 );
 		}
+	}
+
+	/**
+	 * Claim a checkout on redirect-return (1.6.0).
+	 *
+	 * The controller owns authentication and ownership; the gateway owns
+	 * provider verification and crediting. A buyer may only claim a
+	 * session that Pending_Checkouts (or the Transaction_Log, once
+	 * credited) records as theirs — admins may claim any.
+	 */
+	public function claim_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$gateway = $this->resolve_gateway( (string) $request->get_param( 'gateway' ) );
+		if ( ! $gateway instanceof GatewayInterface ) {
+			return new \WP_Error( 'unknown_gateway', 'Gateway not registered.', array( 'status' => 404 ) );
+		}
+		if ( ! $gateway->is_available() ) {
+			return new \WP_Error( 'gateway_unavailable', 'Gateway is not configured.', array( 'status' => 409 ) );
+		}
+
+		$session_id = (string) $request->get_param( 'session_id' );
+		$user_id    = get_current_user_id();
+		$is_admin   = current_user_can( 'manage_options' );
+
+		$expected = Pending_Checkouts::get( $this->slug, $session_id );
+		if ( null !== $expected ) {
+			if ( ! $is_admin && (int) $expected['user_id'] !== $user_id ) {
+				return new \WP_Error( 'not_your_session', 'This checkout belongs to a different account.', array( 'status' => 403 ) );
+			}
+			if ( ! $gateway instanceof Abstract_Gateway ) {
+				// Custom gateway outside the SDK base class — webhook-only.
+				return new \WP_REST_Response( array( 'received' => true, 'pending' => true ), 202 );
+			}
+			return $gateway->claim_checkout( $this->slug, $session_id );
+		}
+
+		// No pending row: either already credited (a webhook or an earlier
+		// claim won) or a session we never created. Answer from the
+		// Transaction_Log so the buyer gets a truthful "already credited"
+		// instead of an error for a payment that actually landed.
+		$row = Transaction_Log::find_checkout( $this->slug, $gateway->get_id(), $session_id );
+		if ( null !== $row ) {
+			if ( ! $is_admin && (int) $row['user_id'] !== $user_id ) {
+				return new \WP_Error( 'not_your_session', 'This checkout belongs to a different account.', array( 'status' => 403 ) );
+			}
+			return new \WP_REST_Response(
+				array(
+					'received' => true,
+					'already'  => true,
+					'credits'  => (int) $row['credits'],
+				),
+				200
+			);
+		}
+
+		return new \WP_Error( 'unknown_session', 'No checkout is recorded for this session.', array( 'status' => 404 ) );
 	}
 
 	public function admin_refund( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
