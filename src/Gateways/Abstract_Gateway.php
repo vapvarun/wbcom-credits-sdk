@@ -104,12 +104,18 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 		}
 
-		$ledger_id = Credits::topup(
-			$slug,
-			(int) $expected['user_id'],
-			(int) $expected['credits'],
-			sprintf( 'gateway:%s:%s', $this->get_id(), $event->session_id )
-		);
+		// Money consumers store MINOR units in the ledger, and a credit
+		// count is a MAJOR-unit amount by definition (the same single-
+		// boundary rule 1.5.1 applied to adapter mappings — which missed
+		// this path, so every gateway purchase on a money consumer was
+		// credited at 1/minor-factor of what the buyer paid for). Token
+		// consumers take the integer verbatim, exactly as before.
+		$credits_purchased = (int) $expected['credits'];
+		$topup_note        = sprintf( 'gateway:%s:%s', $this->get_id(), $event->session_id );
+
+		$ledger_id = Credits::is_money( $slug )
+			? Credits::topup_money( $slug, (int) $expected['user_id'], $credits_purchased, '', $topup_note )
+			: Credits::topup( $slug, (int) $expected['user_id'], $credits_purchased, $topup_note );
 		if ( false === $ledger_id ) {
 			return new \WP_REST_Response( array( 'error' => 'topup_failed' ), 500 );
 		}
@@ -197,12 +203,12 @@ abstract class Abstract_Gateway implements GatewayInterface {
 
 		$ledger_id = 0;
 		if ( $credits_to_revoke > 0 ) {
-			$ledger_id = Credits::adjust(
-				$slug,
-				(int) $parent['user_id'],
-				-$credits_to_revoke,
-				sprintf( 'gateway:%s:refund:%s', $this->get_id(), $event->session_id )
-			);
+			// Same money-mode boundary as the topup above: a credit count is
+			// a MAJOR-unit amount on money consumers.
+			$refund_note = sprintf( 'gateway:%s:refund:%s', $this->get_id(), $event->session_id );
+			$ledger_id   = Credits::is_money( $slug )
+				? Credits::adjust_money( $slug, (int) $parent['user_id'], -$credits_to_revoke, '', $refund_note )
+				: Credits::adjust( $slug, (int) $parent['user_id'], -$credits_to_revoke, $refund_note );
 			if ( false === $ledger_id ) {
 				return new \WP_REST_Response( array( 'error' => 'refund_adjust_failed' ), 500 );
 			}

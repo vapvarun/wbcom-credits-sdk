@@ -13,6 +13,7 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ### Fixed
 
+- **Gateway purchases on money consumers credited 1/minor-factor of what the buyer paid for.** 1.5.1 fixed adapter mappings feeding major-unit values into the integer ledger API, but missed the gateway orchestrator: `process_checkout_completed()` fed the purchased credit count straight into `Credits::topup()`, so a $10 purchase of 100 credits on a money consumer landed as 1 credit (found live on WB Ad Manager Pro while verifying the redirect claim). The refund path had the mirror bug via `Credits::adjust()`. Both now route through `topup_money()`/`adjust_money()` when the consumer registered `money`; token consumers are byte-for-byte unchanged. Locked by `GatewayMoneyModeTest`.
 - **Version self-registration was stale.** The bootstrap registered itself with `Versions` as `1.4.2` while defining `WBCOM_CREDITS_SDK_VERSION` as `1.5.1`, so in a multi-bundle election this copy would lose to any copy registering >= 1.5.0 despite being newer. Registration string, initializer function names, and the constant now all carry the real version.
 
 ## [1.5.1] - 2026-07-28
