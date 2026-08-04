@@ -61,9 +61,12 @@ final class Stripe extends Abstract_Gateway {
 					'live' => __( 'Live', 'wbcom-credits-sdk' ),
 				),
 			),
-			array( 'key' => 'publishable_key', 'type' => 'text',     'label' => __( 'Publishable key (active mode)', 'wbcom-credits-sdk' ) ),
-			array( 'key' => 'secret_key',      'type' => 'password', 'label' => __( 'Secret key (active mode)', 'wbcom-credits-sdk' ) ),
-			array( 'key' => 'webhook_secret',  'type' => 'password', 'label' => __( 'Webhook signing secret', 'wbcom-credits-sdk' ) ),
+			array( 'key' => 'publishable_key', 'type' => 'text',     'label' => __( 'Publishable key (active mode)', 'wbcom-credits-sdk' ), 'required' => true ),
+			array( 'key' => 'secret_key',      'type' => 'password', 'label' => __( 'Secret key (active mode)', 'wbcom-credits-sdk' ), 'required' => true ),
+			// Optional since 1.6.0: the redirect claim credits purchases
+			// without a webhook. The webhook adds refund sync and a
+			// crediting fallback, so it is recommended - not required.
+			array( 'key' => 'webhook_secret',  'type' => 'password', 'label' => __( 'Webhook signing secret', 'wbcom-credits-sdk' ), 'required' => false ),
 			array( 'key' => 'success_url',     'type' => 'url',      'label' => __( 'Post-purchase redirect', 'wbcom-credits-sdk' ) ),
 			array( 'key' => 'cancel_url',      'type' => 'url',      'label' => __( 'Cancel-redirect URL', 'wbcom-credits-sdk' ) ),
 		);

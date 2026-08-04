@@ -62,9 +62,11 @@ final class PayPal extends Abstract_Gateway {
 					'live'    => __( 'Live', 'wbcom-credits-sdk' ),
 				),
 			),
-			array( 'key' => 'client_id',     'type' => 'text',     'label' => __( 'Client ID', 'wbcom-credits-sdk' ) ),
-			array( 'key' => 'client_secret', 'type' => 'password', 'label' => __( 'Client secret', 'wbcom-credits-sdk' ) ),
-			array( 'key' => 'webhook_id',    'type' => 'text',     'label' => __( 'Webhook ID', 'wbcom-credits-sdk' ) ),
+			array( 'key' => 'client_id',     'type' => 'text',     'label' => __( 'Client ID', 'wbcom-credits-sdk' ), 'required' => true ),
+			array( 'key' => 'client_secret', 'type' => 'password', 'label' => __( 'Client secret', 'wbcom-credits-sdk' ), 'required' => true ),
+			// Required: PayPal has no synchronous claim path, so the webhook
+			// is the only crediting mechanism.
+			array( 'key' => 'webhook_id',    'type' => 'text',     'label' => __( 'Webhook ID', 'wbcom-credits-sdk' ), 'required' => true ),
 		);
 	}
 
