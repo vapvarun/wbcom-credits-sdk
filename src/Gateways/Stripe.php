@@ -91,19 +91,38 @@ final class Stripe extends Abstract_Gateway {
 		// the page it was rendered on (e.g. dashboard?tab=credits), it passes
 		// that here so users land back on the same page after Stripe instead
 		// of the global success_url. Falls back to settings, then home_url.
-		$return_url  = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
-		$success_url = '' !== $return_url
-			? add_query_arg( array( 'wbcom_credits' => 'success', 'gateway' => self::ID, 'credits' => $credits ), $return_url )
-			: (string) ( $settings['success_url'] ?? '' );
-		$cancel_url  = '' !== $return_url
-			? add_query_arg( array( 'wbcom_credits' => 'cancel', 'gateway' => self::ID ), $return_url )
-			: (string) ( $settings['cancel_url'] ?? '' );
-		if ( '' === $success_url ) {
-			$success_url = home_url( '/?wbcom_credits=success' );
+		//
+		// The wbcom_credits/gateway/credits params are appended to WHICHEVER
+		// base wins. They used to be added only on the return_url branch, so
+		// a consumer relying on the settings/home fallback got a success URL
+		// with no gateway marker — and its return handler could not tell
+		// which gateway to claim the session against (the original root
+		// cause of WB Ad Manager card 10134503233, fixed at the caller
+		// there but still live at this seam for every other consumer).
+		$return_url   = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
+		$success_base = '' !== $return_url ? $return_url : (string) ( $settings['success_url'] ?? '' );
+		$cancel_base  = '' !== $return_url ? $return_url : (string) ( $settings['cancel_url'] ?? '' );
+		if ( '' === $success_base ) {
+			$success_base = home_url( '/' );
 		}
-		if ( '' === $cancel_url ) {
-			$cancel_url = home_url( '/?wbcom_credits=cancel' );
+		if ( '' === $cancel_base ) {
+			$cancel_base = home_url( '/' );
 		}
+		$success_url = add_query_arg(
+			array(
+				'wbcom_credits' => 'success',
+				'gateway'       => self::ID,
+				'credits'       => $credits,
+			),
+			$success_base
+		);
+		$cancel_url  = add_query_arg(
+			array(
+				'wbcom_credits' => 'cancel',
+				'gateway'       => self::ID,
+			),
+			$cancel_base
+		);
 
 		$body = array(
 			'mode'                                          => 'payment',

@@ -88,20 +88,33 @@ final class PayPal extends Abstract_Gateway {
 
 		$amount_str = number_format( $price_cents / 100, 2, '.', '' );
 
-		// Per-checkout return_url override — see Stripe.php for the same logic.
-		$return_url = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
-		$paypal_success = '' !== $return_url
-			? add_query_arg( array( 'wbcom_credits' => 'success', 'gateway' => self::ID, 'credits' => $credits ), $return_url )
-			: (string) ( $settings['success_url'] ?? '' );
-		$paypal_cancel  = '' !== $return_url
-			? add_query_arg( array( 'wbcom_credits' => 'cancel', 'gateway' => self::ID ), $return_url )
-			: (string) ( $settings['cancel_url'] ?? '' );
-		if ( '' === $paypal_success ) {
-			$paypal_success = add_query_arg( 'wbcom_credits', 'success', home_url( '/' ) );
+		// Per-checkout return_url override — see Stripe.php for the same
+		// logic, including why the gateway params are appended to whichever
+		// base wins rather than only the return_url branch.
+		$return_url   = ( null !== $return_url && '' !== $return_url ) ? $return_url : '';
+		$success_base = '' !== $return_url ? $return_url : (string) ( $settings['success_url'] ?? '' );
+		$cancel_base  = '' !== $return_url ? $return_url : (string) ( $settings['cancel_url'] ?? '' );
+		if ( '' === $success_base ) {
+			$success_base = home_url( '/' );
 		}
-		if ( '' === $paypal_cancel ) {
-			$paypal_cancel = add_query_arg( 'wbcom_credits', 'cancel', home_url( '/' ) );
+		if ( '' === $cancel_base ) {
+			$cancel_base = home_url( '/' );
 		}
+		$paypal_success = add_query_arg(
+			array(
+				'wbcom_credits' => 'success',
+				'gateway'       => self::ID,
+				'credits'       => $credits,
+			),
+			$success_base
+		);
+		$paypal_cancel  = add_query_arg(
+			array(
+				'wbcom_credits' => 'cancel',
+				'gateway'       => self::ID,
+			),
+			$cancel_base
+		);
 
 		$body = array(
 			'intent'              => 'CAPTURE',

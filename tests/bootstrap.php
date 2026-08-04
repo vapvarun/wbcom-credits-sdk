@@ -447,6 +447,40 @@ if ( ! function_exists( 'wp_remote_get' ) ) {
 	}
 }
 
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( string $path = '' ): string {
+		return 'https://example.test' . $path;
+	}
+}
+
+if ( ! function_exists( 'add_query_arg' ) ) {
+	function add_query_arg( ...$args ): string {
+		// Minimal shim for the two call shapes the SDK uses:
+		// add_query_arg( array, url ) and add_query_arg( key, value, url ).
+		if ( is_array( $args[0] ) ) {
+			$params = $args[0];
+			$url    = (string) $args[1];
+		} else {
+			$params = array( $args[0] => $args[1] );
+			$url    = (string) $args[2];
+		}
+		$sep = ( false === strpos( $url, '?' ) ) ? '?' : '&';
+		return $url . $sep . http_build_query( $params );
+	}
+}
+
+if ( ! function_exists( 'wp_remote_post' ) ) {
+	function wp_remote_post( string $url, array $args = array() ) {
+		global $wbcom_credits_test_http, $wbcom_credits_test_http_log;
+		$wbcom_credits_test_http_log[] = array(
+			'method' => 'POST',
+			'url'    => $url,
+			'args'   => $args,
+		);
+		return $wbcom_credits_test_http[ 'POST ' . $url ] ?? new \WP_Error( 'no_http_stub', 'No stubbed response for POST ' . $url );
+	}
+}
+
 if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
 	function wp_remote_retrieve_body( $response ): string {
 		return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
