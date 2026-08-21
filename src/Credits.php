@@ -364,6 +364,30 @@ final class Credits {
 	}
 
 	/**
+	 * Cancel a SPECIFIC unconsumed hold by the ledger id hold()/hold_money() returned.
+	 *
+	 * Prefer this over cancel_hold() whenever more than one hold can share an
+	 * item_id over the item's lifetime (e.g. multiple plan-activation attempts on
+	 * one listing, or sibling need-responses keyed on one need_id). cancel_hold()
+	 * deletes ALL 'hold' rows for the item_id, which — because a committed
+	 * deduct_with_hold_release() leaves its 'hold' row in place — can delete a
+	 * previously-committed attempt's hold and silently reverse that charge. Passing
+	 * the exact id returned when the reservation was placed only ever removes the
+	 * still-unconsumed hold.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $hold_id Ledger row id returned by hold()/hold_money().
+	 * @return void
+	 */
+	public static function cancel_hold_by_id( string $slug, int $user_id, int $hold_id ): void {
+		self::invalidate_cache( $slug, $user_id );
+		Ledger::cancel_hold_by_id( self::get_prefix( $slug ), $user_id, $hold_id );
+	}
+
+	/**
 	 * Which routes a member could actually use to buy credits on this site.
 	 *
 	 * THE answer to "can a member buy credits here?". Consumers gate their
@@ -622,7 +646,7 @@ final class Credits {
 	 * @param string $currency Explicit override (may be empty).
 	 * @return string Upper-case ISO 4217 code.
 	 */
-	private static function resolve_money_currency( string $slug, string $currency ): string {
+	public static function resolve_money_currency( string $slug, string $currency = '' ): string {
 		if ( '' !== $currency ) {
 			return strtoupper( $currency );
 		}

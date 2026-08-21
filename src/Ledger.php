@@ -222,4 +222,41 @@ final class Ledger {
 			array( '%d', '%d', '%s' )
 		);
 	}
+
+	/**
+	 * Cancel (physically delete) a SPECIFIC unconsumed hold row by its ledger id.
+	 *
+	 * Unlike cancel_hold() — which deletes EVERY 'hold' row for (user_id,
+	 * item_id) — this targets one row by primary key. Required whenever more
+	 * than one hold can share an item_id over time: deduct_with_hold_release()
+	 * leaves the committed attempt's 'hold' row physically in place (its balance
+	 * effect is reversed by a paired 'refund' release entry, not by deletion), so
+	 * a broad cancel_hold(item_id) on a later failed attempt would also delete a
+	 * PRIOR committed attempt's lingering hold row — un-balancing that charge
+	 * (the release entry survives, silently reversing the deduction). Deleting by
+	 * the exact hold id returned by Credits::hold()/hold_money() only ever removes
+	 * the still-unconsumed reservation the caller placed.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $prefix  Plugin prefix.
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $hold_id Ledger row id returned by hold()/hold_money().
+	 * @return void
+	 */
+	public static function cancel_hold_by_id( string $prefix, int $user_id, int $hold_id ): void {
+		global $wpdb;
+		$table = self::table_name( $prefix );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->delete(
+			$table,
+			array(
+				'id'         => $hold_id,
+				'user_id'    => $user_id,
+				'entry_type' => 'hold',
+			),
+			array( '%d', '%d', '%s' )
+		);
+	}
 }

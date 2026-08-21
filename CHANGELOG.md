@@ -6,6 +6,16 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ### Added
 
+- **`Consumer` is money-mode aware (#7 follow-up).** A money consumer's ledger holds integer MINOR units, but `Consumer` compared and charged in whatever unit `resolve_cost()` returned — so a 10-credit listing fee reserved 10 *minor* units, roughly a 1/100th charge on a hundredths-based currency, silently. It now dispatches through `balance_money()` / `hold_money()` / `deduct_money()` / `refund_money()` when the consumer registers `money`, and through the raw methods otherwise. Token consumers are unaffected. Ported from a downstream fork that had carried this fix privately.
+- **`Credits::cancel_hold_by_id()` and `Ledger::cancel_hold_by_id()`.** `cancel_hold()` deletes every hold on an item, so a consumer that placed two holds and wanted to drop one released both. These cancel a single hold by the row id `hold()` / `hold_money()` returned. Also ported from the same fork, where it was already in production use.
+- **`Credits::resolve_money_currency()` is now public.** It was private, so a consumer rendering a stored ledger figure had no supported way to ask which currency governs the conversion and had to guess — or hardcode `/100`, which is wrong for JPY and other zero-decimal currencies.
+
+### Tests
+
+- `tests/Credits/ConsumerMoneyModeTest.php` (new) — locks the money/token dispatch: a money balance reads back in major units, a major-unit hold reserves minor units, hold → commit charges exactly once, a token consumer keeps integer semantics, and `cancel_hold_by_id()` removes one hold while leaving a sibling hold on the same item intact.
+
+### Added
+
 - **`Credits::purchase_paths()` / `Credits::can_purchase()` — the SDK now owns "can a member buy credits here?" (#7).** The SDK already owned every fact needed to answer it (`Gateway_Registry::get_available()`, `AdapterRegistry` and the `{slug}_credit_mappings` option it reads, `get_purchase_url()`) but exposed no composite, so each consumer assembled its own from whichever primitives it happened to need. They drifted: in one consumer three separate answers existed, one counting adapter mappings but not gateways, another gateways but not mappings, and the narrowest was the one gating member-facing UI — so a site selling credits through a mapped WooCommerce product hid the Credits UI from members who could genuinely buy. `purchase_paths()` returns the live routes (`gateway`, `mapping`, `external_url`) rather than a bare boolean, because a consumer telling an owner what to fix must distinguish "no gateway" from "no mapping". A mapping counts only when its adapter reports `is_available()`, which also closes a second-order bug: consumers were hard-coding per-adapter availability checks and had missed `woo_memberships` entirely, so any adapter the SDK gains was invisible until someone edited a list in another repository. Consumers contribute their own routes (their own credit-pack products, say) via the `wbcom_credits_purchase_paths` filter. Additive; no existing method changes behaviour.
 
 ### Tests
