@@ -447,6 +447,12 @@ if ( ! function_exists( 'wp_remote_get' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
+
 if ( ! function_exists( 'home_url' ) ) {
 	function home_url( string $path = '' ): string {
 		return 'https://example.test' . $path;

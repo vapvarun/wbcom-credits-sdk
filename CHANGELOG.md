@@ -4,6 +4,14 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 ## [Unreleased]
 
+### Added
+
+- **`Credits::purchase_paths()` / `Credits::can_purchase()` — the SDK now owns "can a member buy credits here?" (#7).** The SDK already owned every fact needed to answer it (`Gateway_Registry::get_available()`, `AdapterRegistry` and the `{slug}_credit_mappings` option it reads, `get_purchase_url()`) but exposed no composite, so each consumer assembled its own from whichever primitives it happened to need. They drifted: in one consumer three separate answers existed, one counting adapter mappings but not gateways, another gateways but not mappings, and the narrowest was the one gating member-facing UI — so a site selling credits through a mapped WooCommerce product hid the Credits UI from members who could genuinely buy. `purchase_paths()` returns the live routes (`gateway`, `mapping`, `external_url`) rather than a bare boolean, because a consumer telling an owner what to fix must distinguish "no gateway" from "no mapping". A mapping counts only when its adapter reports `is_available()`, which also closes a second-order bug: consumers were hard-coding per-adapter availability checks and had missed `woo_memberships` entirely, so any adapter the SDK gains was invisible until someone edited a list in another repository. Consumers contribute their own routes (their own credit-pack products, say) via the `wbcom_credits_purchase_paths` filter. Additive; no existing method changes behaviour.
+
+### Tests
+
+- `tests/Credits/CreditsPurchasePathsTest.php` (new) — locks: a bare site has no route and `can_purchase()` stays false (the empty-storefront guard the composite replaces must not become permissive), a same-site purchase URL is not a route on its own while an off-site one is, a mapping to an unavailable adapter does not count, consumer-contributed routes count, and every route is returned boolean-cast.
+
 ## [1.6.0] - 2026-08-04
 
 ### Added

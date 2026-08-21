@@ -363,6 +363,127 @@ final class Credits {
 		return (string) apply_filters( 'wbcom_credits_purchase_url', $url, $slug );
 	}
 
+	/**
+	 * Which routes a member could actually use to buy credits on this site.
+	 *
+	 * THE answer to "can a member buy credits here?". Consumers gate their
+	 * member-facing credit UI on this instead of assembling their own answer.
+	 *
+	 * It exists because the SDK previously exposed only the primitives -
+	 * `Gateway_Registry::get_available()`, `AdapterRegistry`, the
+	 * `{slug}_credit_mappings` option, `get_purchase_url()` - and left the
+	 * composite to each consumer. Consumers duly wrote one each, from
+	 * different subsets, at different times, and they disagreed on real sites:
+	 * one counted mappings but not gateways, another gateways but not
+	 * mappings. The narrowest answer is the one that hides UI, so members who
+	 * could genuinely buy credits were shown nothing. See issue #7.
+	 *
+	 * Returning the ROUTES rather than a bare boolean is deliberate: a
+	 * consumer telling an owner what to fix needs to distinguish "no gateway"
+	 * from "no mapping", and a bare true/false cannot.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug Consumer plugin slug.
+	 * @return array<string, bool> Route => whether it is live. Keys:
+	 *                             `gateway`, `mapping`, `external_url`.
+	 */
+	public static function purchase_paths( string $slug ): array {
+		$paths = array(
+			'gateway'      => false,
+			'mapping'      => false,
+			'external_url' => false,
+		);
+
+		// A gateway that is enabled AND credentialed - the registry decides.
+		$paths['gateway'] = ! empty( Gateways\Gateway_Registry::for_slug( $slug )->get_available() );
+
+		/*
+		 * A mapping whose adapter is actually available.
+		 *
+		 * BOTH halves are required and this is the part consumers kept getting
+		 * wrong by hand: a mapping to a WooCommerce product grants nothing
+		 * when WooCommerce is inactive, and an active WooCommerce with no
+		 * mapping sells nothing. Availability is the ADAPTER's own answer, so
+		 * an adapter added to the SDK later is counted with no consumer edit -
+		 * which is exactly what a hardcoded consumer-side list cannot do.
+		 */
+		$registry = new Adapters\AdapterRegistry( $slug, self::get_prefix( $slug ) );
+		$mappings = get_option( $slug . '_credit_mappings', array() );
+
+		if ( is_array( $mappings ) ) {
+			foreach ( $mappings as $adapter_id => $mapping ) {
+				// Accept both storage shapes lookup_credits() accepts: a flat
+				// list of rows carrying an `adapter` key, and the nested
+				// adapter_id => [ item => credits ] map.
+				$id = is_array( $mapping ) && isset( $mapping['adapter'] )
+					? (string) $mapping['adapter']
+					: (string) $adapter_id;
+
+				if ( '' === $id || is_numeric( $id ) && ! is_array( $mapping ) ) {
+					continue;
+				}
+
+				$adapter = $registry->get( $id );
+
+				if ( $adapter && $adapter->is_available() ) {
+					$paths['mapping'] = true;
+					break;
+				}
+			}
+		}
+
+		/*
+		 * An explicit purchase URL that leaves this site.
+		 *
+		 * A SAME-site URL is not counted on its own: it is typically the
+		 * auto-set link to the consumer's own credit-packs screen, which
+		 * without a gateway is precisely the dead end this check exists to
+		 * prevent a member being sent to.
+		 */
+		$url = trim( self::get_purchase_url( $slug ) );
+
+		if ( '' !== $url ) {
+			$url_host  = (string) wp_parse_url( $url, PHP_URL_HOST );
+			$site_host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+
+			if ( '' !== $url_host && $url_host !== $site_host ) {
+				$paths['external_url'] = true;
+			}
+		}
+
+		/**
+		 * Filter the live credit purchase routes.
+		 *
+		 * Consumers add their OWN routes here - a plugin that sells credit
+		 * packs as its own products contributes that as a further key. Add a
+		 * key rather than replacing the array, so no route is lost.
+		 *
+		 * @since 1.6.0
+		 *
+		 * @param array<string, bool> $paths Route => whether it is live.
+		 * @param string              $slug  Consumer plugin slug.
+		 */
+		$paths = (array) apply_filters( 'wbcom_credits_purchase_paths', $paths, $slug );
+
+		return array_map( 'boolval', $paths );
+	}
+
+	/**
+	 * Whether ANY real purchase route is live.
+	 *
+	 * Convenience over `purchase_paths()` for the common gate. Prefer
+	 * `purchase_paths()` when you need to tell an owner what to fix.
+	 *
+	 * @since 1.6.0
+	 *
+	 * @param string $slug Consumer plugin slug.
+	 * @return bool
+	 */
+	public static function can_purchase( string $slug ): bool {
+		return in_array( true, self::purchase_paths( $slug ), true );
+	}
+
 	// -------------------------------------------------------------------------
 	// Money-denominated helpers
 	//
