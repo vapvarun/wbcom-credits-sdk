@@ -133,6 +133,30 @@ final class WooCommerceAdapter implements AdapterInterface {
 			return;
 		}
 
+		// Do not credit an order nobody has paid for.
+		//
+		// This handler runs on `processing` as well as `completed`, and Cash on
+		// Delivery, cheque and BACS all move an UNPAID order to `processing`.
+		// Without this a buyer could place a COD order, receive the credits
+		// immediately, spend them on a plan, and never pay.
+		//
+		// The test is `get_date_paid()`, NOT `is_paid()`. `is_paid()` asks
+		// whether the STATUS is one of the paid statuses, and `processing` is
+		// one of them — it returns true for an unpaid COD order and for a
+		// genuinely captured card order alike, so guarding on it would look
+		// correct and change nothing. WooCommerce stamps `date_paid` when money
+		// is actually taken (`payment_complete()`), and also when a COD order is
+		// finally marked completed, so this admits every real payment without
+		// needing a gateway allowlist.
+		//
+		// Placed BEFORE the dedupe claim on purpose: claiming first would burn
+		// the event id on an unpaid order, and the later `completed` transition
+		// would find the claim already taken and never credit at all — turning
+		// crediting too early into never crediting.
+		if ( ! $order->get_date_paid() ) {
+			return;
+		}
+
 		// Atomic dedupe: claim BEFORE crediting. A stable per-order event id
 		// keyed under this adapter's slug + an adapter-tagged gateway means a
 		// second delivery of the same order (or the processing→completed pair)
