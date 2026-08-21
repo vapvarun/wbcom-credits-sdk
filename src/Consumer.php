@@ -113,12 +113,12 @@ final class Consumer {
 			return;
 		}
 
-		$balance = Credits::get_balance( $this->slug, $user_id );
+		$balance = $this->current_balance( $user_id );
 		if ( $balance < $cost ) {
 			return;
 		}
 
-		Credits::hold( $this->slug, $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' );
+		$this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' );
 	}
 
 	/**
@@ -142,7 +142,7 @@ final class Consumer {
 			return;
 		}
 
-		Credits::deduct( $this->slug, $user_id, $cost, $item_id, $this->config['label'] . ' — credits deducted' );
+		$this->settle( $user_id, $cost, $item_id, $this->config['label'] . ' — credits deducted' );
 	}
 
 	/**
@@ -166,7 +166,85 @@ final class Consumer {
 			return;
 		}
 
-		Credits::refund( $this->slug, $user_id, $cost, $item_id, $this->config['label'] . ' — credits refunded' );
+		$this->release( $user_id, $cost, $item_id, $this->config['label'] . ' — credits refunded' );
+	}
+
+	/**
+	 * Read the user's balance in the same units resolve_cost() returns.
+	 *
+	 * When the slug is registered in money mode the SDK ledger stores integer
+	 * MINOR units, so the raw Credits::get_balance()/hold()/deduct()/refund()
+	 * methods would treat a MAJOR-unit cost (e.g. a 5-credit listing fee) as 5
+	 * minor units — a ~100x under-charge on a hundredths-based currency. Dispatch
+	 * to the *_money() variants (which convert major→minor) whenever the consumer
+	 * runs in money mode, and to the raw methods otherwise.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param int $user_id WordPress user ID.
+	 * @return float Balance in major units when money mode, else raw credits.
+	 */
+	private function current_balance( int $user_id ): float {
+		return Credits::is_money( $this->slug )
+			? Credits::balance_money( $this->slug, $user_id )
+			: (float) Credits::get_balance( $this->slug, $user_id );
+	}
+
+	/**
+	 * Reserve credits for the cost, money-mode aware.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $cost    Cost in the unit resolve_cost() returns (major credits).
+	 * @param int    $item_id Item ID.
+	 * @param string $note    Ledger note.
+	 * @return void
+	 */
+	private function reserve( int $user_id, int $cost, int $item_id, string $note ): void {
+		if ( Credits::is_money( $this->slug ) ) {
+			Credits::hold_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
+			return;
+		}
+		Credits::hold( $this->slug, $user_id, $cost, $item_id, $note );
+	}
+
+	/**
+	 * Permanently deduct credits for the cost, money-mode aware.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $cost    Cost in the unit resolve_cost() returns (major credits).
+	 * @param int    $item_id Item ID.
+	 * @param string $note    Ledger note.
+	 * @return void
+	 */
+	private function settle( int $user_id, int $cost, int $item_id, string $note ): void {
+		if ( Credits::is_money( $this->slug ) ) {
+			Credits::deduct_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
+			return;
+		}
+		Credits::deduct( $this->slug, $user_id, $cost, $item_id, $note );
+	}
+
+	/**
+	 * Refund/release credits for the cost, money-mode aware.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $cost    Cost in the unit resolve_cost() returns (major credits).
+	 * @param int    $item_id Item ID.
+	 * @param string $note    Ledger note.
+	 * @return void
+	 */
+	private function release( int $user_id, int $cost, int $item_id, string $note ): void {
+		if ( Credits::is_money( $this->slug ) ) {
+			Credits::refund_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
+			return;
+		}
+		Credits::refund( $this->slug, $user_id, $cost, $item_id, $note );
 	}
 
 	/**
