@@ -1,26 +1,31 @@
 # Who bundles this SDK
 
-Every consuming plugin ships its own copy of the SDK, and the loader fills in
-only the classes not already in memory — so on a site running several Wbcom
-plugins, **the copy loaded first owns `\Wbcom\Credits\*` for the whole
-request**, whatever version it is. A single consumer left behind on an old copy
-therefore breaks every other consumer on that site, not itself.
+Every consuming plugin ships its own copy of the SDK, because a customer may
+install just one of our plugins and there is no shared dependency manager in
+WordPress. PHP still has exactly one `\Wbcom\Credits\Credits` per request, so
+the copies have to agree on which of them gets to be it.
 
-That makes "which version is bundled where" a security and correctness property
-of the SDK, not of the individual plugin. This file is the register. Update it
-in the same change that bumps a consumer's bundle.
+**From SDK 1.7.0 they elect one.** Each copy announces its directory and
+version at include time and loads nothing; the first class anyone touches is
+served from the highest version announced, and every later class comes from
+that same directory. A stale bundle announces, loses, and supplies nothing.
 
-Last audited: 2026-09-15, against canonical `master` (1.6.0).
+**Copies from 1.6.0 and earlier still load eagerly**, so one of those can still
+win on load order and hand a newer consumer a class without the methods it
+calls. That is what consumers' readiness checks are for (Guard column), and
+why bundles should still be kept current rather than left to the election.
+
+Last audited: 2026-09-15, against canonical `master` (1.7.0).
 
 ## Consumers
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.6.0 | `Credits_Bridge::sdk_money_ready()` |
-| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.6.0 | `wb_listora_credits_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.7.0 | `Credits_Bridge::sdk_money_ready()` |
+| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.0 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
-| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.6.0 | none — legacy API only |
-| WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | `plugins_loaded` (10) | 1.6.0 | none — legacy API only |
+| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.7.0 | none — legacy API only |
+| WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | `plugins_loaded` (10) | 1.7.0 | none — legacy API only |
 
 Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
@@ -35,9 +40,9 @@ WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
    bundle that is gitignored or left untracked ships whatever happened to be on
    the builder's disk — WPConnectPress shipped 1.3.0 that way while its repo
    tracked only `composer.lock`.
-3. **Load it while the plugin file runs**, not on `plugins_loaded`. Late loaders
-   lose the race to any plugin that loads early, and then call their own newer
-   API on someone else's older class.
+3. **Load it while the plugin file runs**, not on `plugins_loaded`. Since 1.7.0
+   this no longer decides who wins, but announcing early is what guarantees a
+   copy is in the election before the first class is touched.
 4. **Never gate on `class_exists( '\Wbcom\Credits\Credits' )` alone.** The class
    existing says nothing about its version. Gate on the methods you actually
    call (see the Guard column) so a skewed site degrades instead of fataling.
