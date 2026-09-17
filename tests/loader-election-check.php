@@ -25,7 +25,7 @@ $tmp = sys_get_temp_dir() . '/wbcom-sdk-election-' . getmypid();
 function wbcom_fake_copy( string $dir, string $version ): void {
 	@mkdir( $dir . '/src', 0777, true );
 	$real = file_get_contents( __DIR__ . '/../wbcom-credits-sdk.php' );
-	$real = str_replace( "__DIR__ ] = '1.7.0';", "__DIR__ ] = '" . $version . "';", $real );
+	$real = str_replace( "__DIR__ ] = '1.7.1';", "__DIR__ ] = '" . $version . "';", $real );
 	file_put_contents( $dir . '/wbcom-credits-sdk.php', $real );
 	file_put_contents(
 		$dir . '/src/Money.php',

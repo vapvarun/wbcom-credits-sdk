@@ -493,6 +493,25 @@ if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
 	}
 }
 
+// Transient stubs (PayPal caches its OAuth token). In-memory per request.
+global $wbcom_credits_test_transients;
+$wbcom_credits_test_transients = array();
+
+if ( ! function_exists( 'get_transient' ) ) {
+	function get_transient( string $key ) {
+		global $wbcom_credits_test_transients;
+		return $wbcom_credits_test_transients[ $key ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'set_transient' ) ) {
+	function set_transient( string $key, $value, int $ttl = 0 ): bool {
+		global $wbcom_credits_test_transients;
+		$wbcom_credits_test_transients[ $key ] = $value;
+		return true;
+	}
+}
+
 require_once __DIR__ . '/Support/FakeWpdb.php';
 
 if ( ! defined( 'ABSPATH' ) ) {

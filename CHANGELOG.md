@@ -22,6 +22,17 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 - `tests/Credits/CreditsPurchasePathsTest.php` (new) — locks: a bare site has no route and `can_purchase()` stays false (the empty-storefront guard the composite replaces must not become permissive), a same-site purchase URL is not a route on its own while an off-site one is, a mapping to an unavailable adapter does not count, consumer-contributed routes count, and every route is returned boolean-cast.
 
+## [1.7.1] - 2026-09-17
+
+### Fixed
+
+- **PayPal purchases were never captured, so buyers were never charged and never credited.** Orders are created with `intent: CAPTURE`, and an approved PayPal order takes no money until `POST /v2/checkout/orders/{id}/capture` is called. Nothing called it: the redirect claim inherited the base `retrieve_checkout_event()` (always null, so `202 pending`) and the only crediting path was the `PAYMENT.CAPTURE.COMPLETED` webhook, which PayPal sends only after a capture. `PayPal::retrieve_checkout_event()` now reads the order returned as `token`, captures it when `APPROVED` (idempotent via `PayPal-Request-Id: capture-{order}`), and reports only a `COMPLETED` capture; a `PENDING` capture stays uncredited. A `CHECKOUT.ORDER.APPROVED` webhook performs the same capture, so a buyer who closes the tab after approving is still charged and credited. The existing session-scoped claim keeps the redirect claim, the approved webhook and the later capture webhook to exactly one credit. Found by WB Listora QA.
+- **`PAYMENT.CAPTURE.COMPLETED` without `supplementary_data` used the raw `custom_id` JSON as the session id**, so the webhook matched no checkout. It now reads the stamped order id out of `custom_id`, the same way the refund path does.
+
+### Tests
+
+- `tests/Gateways/PayPalCaptureClaimTest.php` (new) — approved order captured and credited with the idempotency header; unapproved order not captured; already-captured order credited without a second capture; pending capture not credited; approved webhook captures for a buyer who never returned; claim + capture webhook credit exactly once; capture webhook resolves the order from a stamped `custom_id`.
+
 ## [1.6.0] - 2026-08-04
 
 ### Added

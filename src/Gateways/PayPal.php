@@ -64,8 +64,8 @@ final class PayPal extends Abstract_Gateway {
 			),
 			array( 'key' => 'client_id',     'type' => 'text',     'label' => __( 'Client ID', 'wbcom-credits-sdk' ), 'required' => true ),
 			array( 'key' => 'client_secret', 'type' => 'password', 'label' => __( 'Client secret', 'wbcom-credits-sdk' ), 'required' => true ),
-			// Required: PayPal has no synchronous claim path, so the webhook
-			// is the only crediting mechanism.
+			// Required: refunds are only reported by webhook, and
+			// CHECKOUT.ORDER.APPROVED captures for buyers who never return.
 			array( 'key' => 'webhook_id',    'type' => 'text',     'label' => __( 'Webhook ID', 'wbcom-credits-sdk' ), 'required' => true ),
 		);
 	}
@@ -280,11 +280,27 @@ final class PayPal extends Abstract_Gateway {
 		$type     = (string) ( $payload['event_type'] ?? '' );
 		$resource = is_array( $payload['resource'] ?? null ) ? $payload['resource'] : array();
 
+		if ( 'CHECKOUT.ORDER.APPROVED' === $type ) {
+			// The buyer approved but PayPal has taken no money yet: intent
+			// CAPTURE orders stay uncaptured until we call /capture. Capture
+			// here so a buyer who never comes back to the site still pays and
+			// is credited. The slug is read from the order's custom_id because
+			// a webhook payload is not otherwise scoped to a consumer.
+			$order_id = (string) ( $resource['id'] ?? '' );
+			$unit     = is_array( $resource['purchase_units'][0] ?? null ) ? $resource['purchase_units'][0] : array();
+			$custom   = json_decode( (string) ( $unit['custom_id'] ?? '' ), true );
+			$slug     = is_array( $custom ) ? (string) ( $custom['slug'] ?? '' ) : '';
+			if ( '' === $order_id || '' === $slug ) {
+				return null;
+			}
+			return $this->capture_event( $slug, $order_id, $event_id );
+		}
+
 		if ( 'PAYMENT.CAPTURE.COMPLETED' === $type ) {
-			$order_id = (string) (
+			$from_custom = self::session_from_custom_id( $resource['custom_id'] ?? '' );
+			$order_id    = (string) (
 				$resource['supplementary_data']['related_ids']['order_id']
-				?? $resource['custom_id']
-				?? ''
+				?? ( '' !== $from_custom ? $from_custom : '' )
 			);
 			if ( '' === $order_id ) {
 				return null;
@@ -393,6 +409,123 @@ final class PayPal extends Abstract_Gateway {
 			return '';
 		}
 		return (string) ( $decoded['session'] ?? '' );
+	}
+
+	/**
+	 * Confirm a PayPal order on redirect-return, capturing it if approved.
+	 *
+	 * PayPal returns the buyer with `token={order id}`. An approved order is
+	 * NOT paid until it is captured, so unlike Stripe (where the claim only
+	 * reads a paid session) this claim performs the capture - idempotently,
+	 * via PayPal-Request-Id - and then reports the completed capture.
+	 *
+	 * @since 1.7.1
+	 *
+	 * @param string $slug       Consumer plugin slug.
+	 * @param string $session_id PayPal order id.
+	 * @return Gateway_Event|null Completed capture, or null when the order is
+	 *                            not approved yet, the capture is pending, or
+	 *                            PayPal cannot be reached.
+	 */
+	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
+		return $this->capture_event( $slug, $session_id, '' );
+	}
+
+	/**
+	 * Capture an approved order (or read an already-captured one) and build the
+	 * checkout-completed event for it.
+	 *
+	 * @param string $slug     Consumer plugin slug.
+	 * @param string $order_id PayPal order id.
+	 * @param string $event_id Provider event id ('' for a redirect claim).
+	 * @return Gateway_Event|null
+	 */
+	private function capture_event( string $slug, string $order_id, string $event_id ): ?Gateway_Event {
+		if ( '' === $order_id ) {
+			return null;
+		}
+		$settings = $this->get_settings_for_slug( $slug );
+		$base     = self::api_base( $settings );
+		$token    = self::access_token( $settings, $base );
+		if ( '' === $token ) {
+			return null;
+		}
+
+		$order = self::api_json(
+			wp_remote_get(
+				$base . '/v2/checkout/orders/' . rawurlencode( $order_id ),
+				array(
+					'headers' => array( 'Authorization' => 'Bearer ' . $token ),
+					'timeout' => 15,
+				)
+			)
+		);
+		if ( null === $order || (string) ( $order['id'] ?? '' ) !== $order_id ) {
+			return null;
+		}
+
+		if ( 'APPROVED' === ( $order['status'] ?? '' ) ) {
+			$order = self::api_json(
+				wp_remote_post(
+					$base . '/v2/checkout/orders/' . rawurlencode( $order_id ) . '/capture',
+					array(
+						'headers' => array(
+							'Authorization'     => 'Bearer ' . $token,
+							'Content-Type'      => 'application/json',
+							// Same id on every attempt: a retried or racing capture
+							// returns the original result instead of charging twice.
+							'PayPal-Request-Id' => 'capture-' . $order_id,
+						),
+						'body'    => '{}',
+						'timeout' => 20,
+					)
+				)
+			);
+			if ( null === $order ) {
+				return null;
+			}
+		}
+
+		$capture = null;
+		foreach ( (array) ( $order['purchase_units'] ?? array() ) as $unit ) {
+			foreach ( (array) ( $unit['payments']['captures'] ?? array() ) as $candidate ) {
+				if ( is_array( $candidate ) && 'COMPLETED' === ( $candidate['status'] ?? '' ) ) {
+					$capture = $candidate;
+					break 2;
+				}
+			}
+		}
+		if ( null === $capture ) {
+			return null;
+		}
+
+		return new Gateway_Event(
+			type: Gateway_Event::TYPE_CHECKOUT_COMPLETED,
+			event_id: $event_id,
+			session_id: $order_id,
+			amount_cents: (int) round( ( (float) ( $capture['amount']['value'] ?? '0' ) ) * 100 ),
+			currency: strtoupper( (string) ( $capture['amount']['currency_code'] ?? '' ) ),
+			raw: $order,
+			provider_ref: (string) ( $capture['id'] ?? '' )
+		);
+	}
+
+	/**
+	 * Decode a PayPal API response, or null on a transport or HTTP error.
+	 *
+	 * @param array|\WP_Error $response wp_remote_* response.
+	 * @return array<string, mixed>|null
+	 */
+	private static function api_json( $response ): ?array {
+		if ( is_wp_error( $response ) ) {
+			return null;
+		}
+		$code = (int) ( $response['response']['code'] ?? 0 );
+		if ( $code < 200 || $code >= 300 ) {
+			return null;
+		}
+		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		return is_array( $decoded ) ? $decoded : null;
 	}
 
 	/**
