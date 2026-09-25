@@ -38,6 +38,8 @@ Refunds now take credits back, and a paid checkout can no longer be lost. Found 
 ### Added
 
 - **`wbcom_credits_checkout_enabled` filter** (default `Credits::is_enabled()`), checked before a checkout is started. The checkout route is registered unconditionally, so a consumer that had switched credits off still sold them. Completing or claiming a payment already made, and refunds, are not gated. Separate from `wbcom_credits_enabled`, which also drives the balance API's `enabled` flag.
+- **Selling switched off closes every purchase path.** `Credits::checkout_enabled()` is the one gate (it applies `wbcom_credits_checkout_enabled`). The WooCommerce adapter makes mapped credit products (and their variations, and WooCommerce Subscriptions mappings) unpurchasable and says so on the product page; WooCommerce then drops one already in the cart at checkout. The MemberPress adapter refuses a credit-granting membership (`mepr-can-you-buy-me-override`), and the PMPro adapter stops checkout of a credit-granting level (`pmpro_registration_checks`). `can_purchase()` is false while off; `purchase_paths()` still lists what is configured. Orders paid before are still credited. Found on WB Listora: with Monetization off a mapped WooCommerce product still took payment and granted credits the member could neither see nor spend.
+- **`can_buy` on `GET /wbcom-credits/v1/{slug}/balance`** — whether to show a buy button. `enabled` keeps meaning "credits exist here", since balances stay readable while selling is off.
 
 ### Tests
 

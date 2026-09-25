@@ -66,6 +66,32 @@ final class PMProAdapter implements AdapterInterface {
 
 		add_action( 'pmpro_after_change_membership_level', array( $this, 'on_level_change' ), 10, 2 );
 		add_action( 'pmpro_subscription_payment_completed', array( $this, 'on_subscription_payment' ) );
+
+		// While selling is off, a level that grants credits cannot be checked
+		// out. Payments already made are still credited.
+		add_filter( 'pmpro_registration_checks', array( $this, 'gate_checkout' ) );
+	}
+
+	/**
+	 * Stop checkout of a credit-granting level while selling is off.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param bool $continue Whether PMPro may continue the checkout.
+	 * @return bool
+	 */
+	public function gate_checkout( $continue ): bool {
+		if ( ! $continue || \Wbcom\Credits\Credits::checkout_enabled( $this->slug ) ) {
+			return (bool) $continue;
+		}
+		$level = function_exists( 'pmpro_getLevelAtCheckout' ) ? pmpro_getLevelAtCheckout() : ( $GLOBALS['pmpro_level'] ?? null );
+		if ( ! is_object( $level ) || empty( $level->id ) || $this->get_registry()->lookup_credits( $this->get_id(), (int) $level->id ) <= 0 ) {
+			return true;
+		}
+		if ( function_exists( 'pmpro_setMessage' ) ) {
+			pmpro_setMessage( __( 'Credit purchases are not available on this site right now.', 'wbcom-credits-sdk' ), 'pmpro_error' );
+		}
+		return false;
 	}
 
 	/**

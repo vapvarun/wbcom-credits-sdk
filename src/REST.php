@@ -157,6 +157,9 @@ final class REST {
 				'user_id' => $user_id,
 				'balance' => Credits::get_balance( $this->slug, $user_id ),
 				'enabled' => Credits::is_enabled( $this->slug ),
+				// Whether a buy button should show. False while the consumer
+				// has selling switched off; the balance is still returned.
+				'can_buy' => Credits::checkout_enabled( $this->slug ),
 			)
 		);
 	}

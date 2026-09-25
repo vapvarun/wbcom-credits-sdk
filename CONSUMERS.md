@@ -30,6 +30,12 @@ Last audited: 2026-09-15, against canonical `master` (1.7.0).
 Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
 
+**Before re-vendoring 1.7.2:** hook `wbcom_credits_checkout_enabled` to the
+plugin's own "credits are sold here" switch. From 1.7.2 it gates the gateway
+checkout route AND the WooCommerce / MemberPress / PMPro adapters' mapped
+products, so a plugin that leaves it unhooked keeps selling while its credits
+feature is off. WB Listora Pro hooks it to its Monetization toggle.
+
 ## Rules
 
 1. **One version across the portfolio.** A consumer that bundles an older copy

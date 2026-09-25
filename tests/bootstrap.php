@@ -138,6 +138,12 @@ if ( ! function_exists( '_x' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html__' ) ) {
+	function esc_html__( string $s, ?string $domain = null ): string {
+		return htmlspecialchars( $s, ENT_QUOTES );
+	}
+}
+
 if ( ! function_exists( 'esc_html' ) ) {
 	function esc_html( $s ): string {
 		return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' );

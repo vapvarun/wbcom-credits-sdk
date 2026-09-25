@@ -72,6 +72,60 @@ final class WooCommerceAdapter implements AdapterInterface {
 		// all its credits.
 		add_action( 'woocommerce_order_refunded', array( $this, 'on_order_refunded' ), 10, 2 );
 		add_action( 'woocommerce_order_status_cancelled', array( $this, 'on_order_cancelled' ), 10 );
+
+		// While the consumer has selling switched off, its credit products
+		// cannot be bought: no Add to cart, and WooCommerce drops one already
+		// in the cart at checkout. Orders paid before still credit.
+		add_filter( 'woocommerce_is_purchasable', array( $this, 'gate_purchasable' ), 10, 2 );
+		add_action( 'woocommerce_single_product_summary', array( $this, 'print_unavailable_notice' ), 31 );
+	}
+
+	/**
+	 * Credit products are not purchasable while selling is off.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param bool  $purchasable WooCommerce's answer.
+	 * @param mixed $product     WC_Product.
+	 * @return bool
+	 */
+	public function gate_purchasable( $purchasable, $product ): bool {
+		return $purchasable && ! $this->is_blocked( $product );
+	}
+
+	/**
+	 * Say why a credit product has no Add to cart button.
+	 *
+	 * @since 1.7.2
+	 */
+	public function print_unavailable_notice(): void {
+		global $product;
+		if ( $this->is_blocked( $product ) ) {
+			echo '<p class="wbcom-credits-unavailable">' . esc_html__( 'Credit purchases are not available on this site right now.', 'wbcom-credits-sdk' ) . '</p>';
+		}
+	}
+
+	/**
+	 * Whether a product sells this consumer's credits while selling is off.
+	 *
+	 * Checks the product and, for a variation, its parent, under this adapter
+	 * and the WooCommerce Subscriptions adapter (both sell WC products).
+	 *
+	 * @param mixed $product WC_Product.
+	 * @return bool
+	 */
+	private function is_blocked( $product ): bool {
+		if ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) || \Wbcom\Credits\Credits::checkout_enabled( $this->slug ) ) {
+			return false;
+		}
+		$registry = $this->get_registry();
+		$ids      = array( (int) $product->get_id(), method_exists( $product, 'get_parent_id' ) ? (int) $product->get_parent_id() : 0 );
+		foreach ( array_filter( $ids ) as $id ) {
+			if ( $registry->lookup_credits( $this->get_id(), $id ) > 0 || $registry->lookup_credits( 'woo_subscriptions', $id ) > 0 ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

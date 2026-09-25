@@ -65,6 +65,29 @@ final class MemberPressAdapter implements AdapterInterface {
 		$this->prefix = $this->resolve_prefix( $slug );
 
 		add_action( 'mepr_event_transaction_completed', array( $this, 'on_transaction_completed' ) );
+
+		// While selling is off, a membership that grants credits cannot be
+		// bought. Payments already made are still credited.
+		add_filter( 'mepr-can-you-buy-me-override', array( $this, 'gate_purchase' ), 10, 2 );
+	}
+
+	/**
+	 * Refuse a credit-granting membership while selling is off.
+	 *
+	 * MemberPress takes a non-null override as its answer to "can this user
+	 * buy this membership".
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param mixed $override Null, or another plugin's answer.
+	 * @param mixed $product  MeprProduct.
+	 * @return mixed
+	 */
+	public function gate_purchase( $override, $product ) {
+		if ( ! is_object( $product ) || empty( $product->ID ) || \Wbcom\Credits\Credits::checkout_enabled( $this->slug ) ) {
+			return $override;
+		}
+		return $this->get_registry()->lookup_credits( $this->get_id(), (int) $product->ID ) > 0 ? false : $override;
 	}
 
 	/**
