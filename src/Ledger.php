@@ -115,7 +115,7 @@ final class Ledger {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT id, user_id, item_id, entry_type, amount, note, created_at FROM {$table} WHERE user_id = %d ORDER BY created_at DESC LIMIT %d OFFSET %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"SELECT id, user_id, item_id, entry_type, amount, note, created_at FROM {$table} WHERE user_id = %d ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$user_id,
 				$limit,
 				$offset
@@ -123,6 +123,23 @@ final class Ledger {
 		);
 
 		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * Count a user's ledger rows, for paging get_history().
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $prefix  Plugin prefix.
+	 * @param int    $user_id WordPress user ID.
+	 * @return int
+	 */
+	public static function count_for_user( string $prefix, int $user_id ): int {
+		global $wpdb;
+		$table = self::table_name( $prefix );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE user_id = %d", $user_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**

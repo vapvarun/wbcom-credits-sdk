@@ -81,6 +81,19 @@ final class Credits {
 	}
 
 	/**
+	 * How many ledger rows a user has, to page get_ledger().
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @return int
+	 */
+	public static function count_ledger( string $slug, int $user_id ): int {
+		return Ledger::count_for_user( self::get_prefix( $slug ), $user_id );
+	}
+
+	/**
 	 * Check if credits are enabled for a plugin.
 	 *
 	 * @since 1.0.0
