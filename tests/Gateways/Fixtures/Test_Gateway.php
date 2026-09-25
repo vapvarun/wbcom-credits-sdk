@@ -59,7 +59,8 @@ final class Test_Gateway extends Abstract_Gateway {
 			amount_cents: (int) ( $e['amount_cents'] ?? 0 ),
 			currency: (string) ( $e['currency'] ?? 'USD' ),
 			raw: $payload,
-			provider_ref: (string) ( $e['provider_ref'] ?? '' )
+			provider_ref: (string) ( $e['provider_ref'] ?? '' ),
+			amount_is_cumulative: ! empty( $e['cumulative'] )
 		);
 	}
 

@@ -119,6 +119,39 @@ final class Processed_Events {
 	 * @param string $event_id Provider-side event ID.
 	 * @return bool
 	 */
+	/**
+	 * Give a claim back so a retry of the same event can succeed.
+	 *
+	 * A claim is taken before crediting so duplicates cannot double-credit.
+	 * When the crediting itself then fails (no pending checkout, amount
+	 * mismatch, top-up failure), keeping the claim turned every provider retry
+	 * into a "duplicate" and the paid session was never credited. Callers
+	 * release the claim on exactly those failure paths.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $slug     Plugin slug.
+	 * @param string $gateway  Gateway id.
+	 * @param string $event_id Event id that was claimed.
+	 * @return void
+	 */
+	public static function release( string $slug, string $gateway, string $event_id ): void {
+		if ( '' === $event_id ) {
+			return;
+		}
+		global $wpdb;
+		$table = self::table_name( self::resolve_prefix( $slug ) );
+		$wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$table,
+			array(
+				'slug'     => sanitize_key( $slug ),
+				'gateway'  => sanitize_key( $gateway ),
+				'event_id' => $event_id,
+			),
+			array( '%s', '%s', '%s' )
+		);
+	}
+
 	public static function exists( string $slug, string $gateway, string $event_id ): bool {
 		if ( '' === $event_id ) {
 			return false;

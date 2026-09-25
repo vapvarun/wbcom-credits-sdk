@@ -94,10 +94,8 @@ final class PendingCheckoutsTest extends TestCase {
 		// instead poke the underlying option to force expiration. Reach
 		// past the API to simulate "this entry was stored 24h ago."
 		global $wbcom_credits_test_options;
-		$key  = 'wbcom_credits_pending_checkouts_plug';
-		$blob = $wbcom_credits_test_options[ $key ];
-		$blob['cs_old']['expires_at'] = time() - 1;
-		$wbcom_credits_test_options[ $key ] = $blob;
+		$key = 'wbcom_credits_pc_plug_' . md5( 'cs_old' );
+		$wbcom_credits_test_options[ $key ]['expires_at'] = time() - 1;
 
 		self::assertNull( Pending_Checkouts::get( 'plug', 'cs_old' ) );
 	}

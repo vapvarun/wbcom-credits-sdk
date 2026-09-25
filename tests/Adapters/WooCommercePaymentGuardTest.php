@@ -124,6 +124,31 @@ final class FakeOrder {
 		$this->meta[ $key ] = $value;
 	}
 
+	/** @var int Order id (refund tests). */
+	public $id = 0;
+
+	/** @var float Order total (refund tests). */
+	public $total = 0.0;
+
+	/** @var float Total refunded so far (refund tests). */
+	public $refunded = 0.0;
+
+	public function get_meta( $key ) {
+		return $this->meta[ $key ] ?? '';
+	}
+
+	public function get_id(): int {
+		return $this->id;
+	}
+
+	public function get_total(): float {
+		return $this->total;
+	}
+
+	public function get_total_refunded(): float {
+		return $this->refunded;
+	}
+
 	public function save(): void {
 		++$this->saves;
 	}
@@ -274,5 +299,87 @@ final class WooCommercePaymentGuardTest extends TestCase {
 		$adapter->on_order_completed( 904 );
 
 		$this->assertSame( 50, Credits::get_balance( self::SLUG, self::USER ) );
+	}
+
+	/**
+	 * A paid, credited order: 50 credits for $10.
+	 */
+	private function credited_order( int $order_id ): FakeOrder {
+		$order        = new FakeOrder( self::USER, '2026-09-25 10:00:00', array( new FakeOrderItem( self::PRODUCT ) ) );
+		$order->id    = $order_id;
+		$order->total = 10.0;
+		self::$orders[ $order_id ] = $order;
+		$this->adapter()->on_order_completed( $order_id );
+		return $order;
+	}
+
+	private function balance(): int {
+		$cache = new ReflectionProperty( Credits::class, 'balance_cache' );
+		$cache->setAccessible( true );
+		$cache->setValue( null, array() );
+		return Credits::get_balance( self::SLUG, self::USER );
+	}
+
+	/**
+	 * Before 1.7.2 nothing listened for refunds: a fully refunded credit order
+	 * left the buyer with every credit it granted.
+	 */
+	public function test_full_refund_revokes_what_the_order_granted(): void {
+		$order = $this->credited_order( 701 );
+		self::assertSame( 50, $this->balance() );
+
+		$order->refunded = 10.0;
+		$this->adapter()->on_order_refunded( 701, 9001 );
+
+		self::assertSame( 0, $this->balance() );
+	}
+
+	/**
+	 * Partial refunds revoke their share, add up, and a re-fired hook for the
+	 * same refund revokes nothing more.
+	 */
+	public function test_partial_refunds_add_up_and_do_not_repeat(): void {
+		$order = $this->credited_order( 702 );
+
+		$order->refunded = 4.0;
+		$this->adapter()->on_order_refunded( 702, 9002 );
+		self::assertSame( 30, $this->balance(), '40% refunded: 20 of 50 credits revoked.' );
+
+		$this->adapter()->on_order_refunded( 702, 9002 );
+		self::assertSame( 30, $this->balance(), 'The same refund id must not revoke twice.' );
+
+		$order->refunded = 10.0;
+		$this->adapter()->on_order_refunded( 702, 9003 );
+		self::assertSame( 0, $this->balance(), 'The second refund revokes only the remaining share.' );
+	}
+
+	/**
+	 * A credited order that is cancelled gives its credits back once.
+	 */
+	public function test_cancelling_a_credited_order_revokes_its_credits(): void {
+		$this->credited_order( 703 );
+
+		$this->adapter()->on_order_cancelled( 703 );
+		$this->adapter()->on_order_cancelled( 703 );
+
+		self::assertSame( 0, $this->balance() );
+	}
+
+	/**
+	 * An order that never granted anything (unpaid, or not a credit product)
+	 * revokes nothing on refund or cancel.
+	 */
+	public function test_uncredited_order_revokes_nothing(): void {
+		$order        = new FakeOrder( self::USER, null, array( new FakeOrderItem( self::PRODUCT ) ) );
+		$order->id    = 704;
+		$order->total = 10.0;
+		self::$orders[704] = $order;
+		$this->adapter()->on_order_completed( 704 ); // Unpaid: not credited.
+
+		$order->refunded = 10.0;
+		$this->adapter()->on_order_refunded( 704, 9004 );
+		$this->adapter()->on_order_cancelled( 704 );
+
+		self::assertSame( 0, $this->balance() );
 	}
 }

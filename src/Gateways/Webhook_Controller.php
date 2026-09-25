@@ -132,6 +132,28 @@ final class Webhook_Controller {
 	// -------------------------------------------------------------------------
 
 	public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		/**
+		 * Filter whether members may START a credit checkout.
+		 *
+		 * The checkout route registers unconditionally, so a consumer that had
+		 * switched credits off (Listora Pro's Monetization toggle) still sold
+		 * credits the member could not spend. Consumers hook this to their own
+		 * switch. Only starting a checkout is gated: completing or claiming a
+		 * payment already made, and refunds, always run.
+		 *
+		 * Separate from `wbcom_credits_enabled` because that one also drives
+		 * the balance API's `enabled` flag, and balances stay readable when
+		 * selling is off.
+		 *
+		 * @since 1.7.2
+		 *
+		 * @param bool   $enabled Default: Credits::is_enabled( $slug ).
+		 * @param string $slug    Consumer slug.
+		 */
+		if ( ! (bool) apply_filters( 'wbcom_credits_checkout_enabled', Credits::is_enabled( $this->slug ), $this->slug ) ) {
+			return new \WP_Error( 'checkout_disabled', __( 'Credit purchases are not available on this site right now.', 'wbcom-credits-sdk' ), array( 'status' => 403 ) );
+		}
+
 		$gateway = $this->resolve_gateway( (string) $request->get_param( 'gateway' ) );
 		if ( ! $gateway instanceof GatewayInterface ) {
 			return new \WP_Error( 'unknown_gateway', 'Gateway not registered.', array( 'status' => 404 ) );

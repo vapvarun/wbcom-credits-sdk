@@ -22,6 +22,29 @@ All notable changes to the Wbcom Credits SDK are documented here. The format fol
 
 - `tests/Credits/CreditsPurchasePathsTest.php` (new) — locks: a bare site has no route and `can_purchase()` stays false (the empty-storefront guard the composite replaces must not become permissive), a same-site purchase URL is not a route on its own while an off-site one is, a mapping to an unavailable adapter does not count, consumer-contributed routes count, and every route is returned boolean-cast.
 
+## [1.7.2] - Unreleased
+
+Refunds now take credits back, and a paid checkout can no longer be lost. Found auditing WB Listora on 2026-09-24; each item was reproduced there or confirmed in code.
+
+### Fixed
+
+- **WooCommerce refunds and cancellations remove the credits an order granted.** Nothing listened for them: a fully refunded credit order left the buyer with every credit. `WooCommerceAdapter` now handles `woocommerce_order_refunded` (full and partial; each refund revokes the order's refunded share minus what is already revoked, claimed once per refund id) and `woocommerce_order_status_cancelled` (the rest of the grant). What an order granted is stored on it (`_wbcom_credits_granted_{slug}`); orders credited before 1.7.2 fall back to the current mapping. Each revocation fires `wbcom_credits_refunded` with reason `gateway_refund`, gateway `woocommerce`.
+- **Stripe refunds find their checkout.** Checkouts sent `payment_intent_data[metadata][wbcom_session] = {CHECKOUT_SESSION_ID}`, but Stripe fills that placeholder only in `success_url`, so every charge carried the literal text; being non-empty it stopped the payment-intent fallback and every refund was dropped as `refund_for_unknown_checkout`. The stamp is removed and the literal is treated as absent, so refunds resolve through the recorded payment intent, including for charges made before this release.
+- **Partial Stripe refunds no longer over-revoke.** `charge.refunded` carries the cumulative `amount_refunded`; it was treated as the new refund, so $3 + $3 on a $10 charge revoked $9 worth of credits. `Gateway_Event` has a new `amount_is_cumulative` flag (Stripe sets it) and `process_refund()` applies only the part not yet refunded. PayPal is unchanged.
+- **A paid checkout is no longer lost when two members check out at once.** `Pending_Checkouts` kept every session in one option that each `put()` / `forget()` read and rewrote, so concurrent checkouts could drop each other's entry and that buyer's webhook and return claim 404'd. Each session is now its own option; entries in the pre-1.7.2 shared option are still read and removed; abandoned entries are swept in bounded batches on `put()`.
+- **A failed crediting attempt no longer burns its claim.** The event claim (and the session claim on a top-up failure) stayed taken when crediting failed, so the provider's retry was acked as a duplicate and the session was never credited. Both are released on failure (`Idempotency::release()`, `Processed_Events::release()`).
+- **`wbcom_credits_refunded` from a gateway refund carries ledger units.** Arg 3 is documented as the ledger amount and `Credits::refund()` sends minor units for a money consumer, but gateway refunds sent the credit count, so a money consumer read a 100-credit refund as 1.
+
+### Added
+
+- **`wbcom_credits_checkout_enabled` filter** (default `Credits::is_enabled()`), checked before a checkout is started. The checkout route is registered unconditionally, so a consumer that had switched credits off still sold them. Completing or claiming a payment already made, and refunds, are not gated. Separate from `wbcom_credits_enabled`, which also drives the balance API's `enabled` flag.
+
+### Tests
+
+- `tests/Gateways/RefundAndCheckoutIntegrityTest.php` (new): cumulative refunds, claim release and retry, no placeholder metadata, placeholder charges resolving by payment intent, legacy pending entries, per-session entries.
+- `tests/Adapters/WooCommercePaymentGuardTest.php`: full, partial, repeated and cancelled-order revocation; uncredited orders revoke nothing.
+- `tests/Gateways/PendingCheckoutsTest.php`: expiry test updated for per-session storage.
+
 ## [1.7.1] - 2026-09-17
 
 ### Fixed

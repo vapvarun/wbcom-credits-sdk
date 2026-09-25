@@ -66,6 +66,12 @@ final class WooCommerceAdapter implements AdapterInterface {
 
 		add_action( 'woocommerce_order_status_completed', array( $this, 'on_order_completed' ), 9 );
 		add_action( 'woocommerce_order_status_processing', array( $this, 'on_order_completed' ), 9 );
+
+		// A refund or cancellation takes back what the order granted. Nothing
+		// did before 1.7.2: a fully refunded credit order left the buyer with
+		// all its credits.
+		add_action( 'woocommerce_order_refunded', array( $this, 'on_order_refunded' ), 10, 2 );
+		add_action( 'woocommerce_order_status_cancelled', array( $this, 'on_order_cancelled' ), 10 );
 	}
 
 	/**
@@ -186,6 +192,10 @@ final class WooCommerceAdapter implements AdapterInterface {
 			);
 
 			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
+
+			// What this order granted, in ledger units, so a refund revokes
+			// exactly that even if the mapping changes later.
+			$order->update_meta_data( $this->granted_meta_key(), $total_credits );
 		}
 
 		// Keep the legacy meta flag as a human-readable marker for support /
@@ -193,6 +203,183 @@ final class WooCommerceAdapter implements AdapterInterface {
 		// above is — so a save() failure here cannot cause a double top-up.
 		$order->update_meta_data( '_wbcom_credits_processed', '1' );
 		$order->save();
+	}
+
+	/**
+	 * Revoke the refunded share of an order's credits (full or partial refund).
+	 *
+	 * Revokes up to the order's refunded fraction of what it granted, minus
+	 * anything already revoked, so several partial refunds add up to the grant
+	 * and never past it. Claimed once per refund id, so a re-fired hook for the
+	 * same refund is a no-op. The balance may go negative when the credits were
+	 * already spent, as it does for a gateway refund.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param int $order_id  WooCommerce order ID.
+	 * @param int $refund_id WooCommerce refund ID.
+	 * @return void
+	 */
+	public function on_order_refunded( $order_id, $refund_id = 0 ): void {
+		$order = wc_get_order( (int) $order_id );
+		if ( ! $order ) {
+			return;
+		}
+
+		$granted = $this->granted_credits( $order );
+		if ( $granted <= 0 ) {
+			return;
+		}
+
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woo:refund:' . (int) $refund_id ) ) {
+			return;
+		}
+
+		$total    = (float) $order->get_total();
+		$refunded = (float) $order->get_total_refunded();
+		$share    = $total > 0 ? min( 1.0, $refunded / $total ) : 1.0;
+
+		$this->revoke_up_to(
+			$order,
+			(int) round( $granted * $share ),
+			sprintf(
+				/* translators: %d: WooCommerce order number. */
+				__( 'Refund of WooCommerce order #%d', 'wbcom-credits-sdk' ),
+				(int) $order_id
+			),
+			'woo:refund:' . (int) $refund_id
+		);
+	}
+
+	/**
+	 * Revoke the rest of a credited order's credits when it is cancelled.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param int $order_id WooCommerce order ID.
+	 * @return void
+	 */
+	public function on_order_cancelled( $order_id ): void {
+		$order = wc_get_order( (int) $order_id );
+		if ( ! $order ) {
+			return;
+		}
+
+		$granted = $this->granted_credits( $order );
+		if ( $granted <= 0 ) {
+			return;
+		}
+
+		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woo:cancel:' . (int) $order_id ) ) {
+			return;
+		}
+
+		$this->revoke_up_to(
+			$order,
+			$granted,
+			sprintf(
+				/* translators: %d: WooCommerce order number. */
+				__( 'Cancelled WooCommerce order #%d', 'wbcom-credits-sdk' ),
+				(int) $order_id
+			),
+			'woo:cancel:' . (int) $order_id
+		);
+	}
+
+	/**
+	 * Bring an order's revoked total up to $target and announce the refund.
+	 *
+	 * @param \WC_Order $order        Order.
+	 * @param int       $target       Ledger units that should be revoked in total.
+	 * @param string    $note         Ledger note.
+	 * @param string    $provider_ref Reference for the refund event context.
+	 * @return void
+	 */
+	private function revoke_up_to( $order, int $target, string $note, string $provider_ref ): void {
+		$user_id = (int) $order->get_customer_id();
+		if ( $user_id <= 0 ) {
+			return;
+		}
+
+		$revoked = (int) $order->get_meta( $this->revoked_meta_key() );
+		$delta   = $target - $revoked;
+		if ( $delta <= 0 ) {
+			return;
+		}
+
+		$ledger_id = \Wbcom\Credits\Credits::adjust( $this->slug, $user_id, -$delta, $note );
+		if ( false === $ledger_id ) {
+			return;
+		}
+
+		$order->update_meta_data( $this->revoked_meta_key(), $revoked + $delta );
+		$order->save();
+
+		/** This action is documented in src/Gateways/Abstract_Gateway.php */
+		do_action(
+			'wbcom_credits_refunded',
+			$this->slug,
+			$user_id,
+			$delta,
+			array(
+				'gateway'      => 'woocommerce',
+				'session_id'   => 'woo:order:' . (int) $order->get_id(),
+				'provider_ref' => $provider_ref,
+				'ledger_id'    => (int) $ledger_id,
+				'reason'       => 'gateway_refund',
+				'item_id'      => 0,
+			)
+		);
+	}
+
+	/**
+	 * Ledger units this order granted, or 0 when it granted none.
+	 *
+	 * Orders credited before 1.7.2 carry no granted-meta; for those the grant
+	 * is recomputed from the current mapping, but only when the order was
+	 * actually credited (its dedupe claim exists).
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return int
+	 */
+	private function granted_credits( $order ): int {
+		$stored = $order->get_meta( $this->granted_meta_key() );
+		if ( '' !== $stored && null !== $stored ) {
+			return (int) $stored;
+		}
+
+		if ( ! Processed_Events::exists( $this->slug, 'adapter:' . $this->get_id(), 'woo:order:' . (int) $order->get_id() ) ) {
+			return 0;
+		}
+
+		$registry = $this->get_registry();
+		$total    = 0;
+		foreach ( $order->get_items() as $item ) {
+			$credits = $registry->lookup_credits( $this->get_id(), $item->get_product_id() );
+			if ( $credits > 0 ) {
+				$total += $credits * (int) $item->get_quantity();
+			}
+		}
+
+		return $total;
+	}
+
+	/**
+	 * Order meta holding the ledger units this consumer granted for the order.
+	 *
+	 * @return string
+	 */
+	private function granted_meta_key(): string {
+		return '_wbcom_credits_granted_' . sanitize_key( $this->slug );
+	}
+
+	/**
+	 * Order meta holding the ledger units already revoked for the order.
+	 *
+	 * @return string
+	 */
+	private function revoked_meta_key(): string {
+		return '_wbcom_credits_revoked_' . sanitize_key( $this->slug );
 	}
 
 	/**

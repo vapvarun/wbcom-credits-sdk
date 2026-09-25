@@ -48,6 +48,7 @@ final class Gateway_Event {
 		public int $amount_cents,
 		public string $currency,
 		public array $raw = array(),
-		public string $provider_ref = ''
+		public string $provider_ref = '',
+		public bool $amount_is_cumulative = false
 	) {}
 }
