@@ -725,13 +725,19 @@ final class Credits {
 	/**
 	 * Invalidate per-request balance cache.
 	 *
+	 * Public since 1.7.2 for consumers that serialise spends with their own
+	 * lock: a balance read earlier in the request (a pre-check) is cached, so
+	 * after taking the lock the next read must come from the ledger or two
+	 * requests both pass the check (found on WB Listora, card 10336800031).
+	 *
 	 * @since 1.0.0
+	 * @since 1.7.2 Public.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
 	 * @return void
 	 */
-	private static function invalidate_cache( string $slug, int $user_id ): void {
+	public static function invalidate_cache( string $slug, int $user_id ): void {
 		unset( self::$balance_cache[ $slug ][ $user_id ] );
 	}
 
