@@ -230,6 +230,22 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			? (int) floor( $orig_credits * $refund_amount / $orig_amount )
 			: 0;
 
+		// A refund can only take back what the buyer has not already spent. The
+		// line above is the proportional share of the ORIGINAL purchase, computed
+		// from the payment alone - it has no idea whether some (or all) of it was
+		// already deducted by the consumer. Cap it to the current balance so a
+		// refund can never drive it negative. The site owner is expected to only
+		// refund the buyer's unspent balance at the provider; this cap is the
+		// SDK-side safety net, not the primary enforcement - it should not fire
+		// in the normal case.
+		if ( $credits_to_revoke > 0 ) {
+			$is_money = Credits::is_money( $slug );
+			$unspent  = $is_money
+				? (int) floor( Credits::balance_money( $slug, (int) $parent['user_id'] ) )
+				: Credits::get_balance( $slug, (int) $parent['user_id'] );
+			$credits_to_revoke = max( 0, min( $credits_to_revoke, $unspent ) );
+		}
+
 		$ledger_id = 0;
 		if ( $credits_to_revoke > 0 ) {
 			// Same money-mode boundary as the topup above: a credit count is
