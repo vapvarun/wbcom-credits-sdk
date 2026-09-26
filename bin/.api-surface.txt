@@ -1,208 +1,208 @@
-Adapters/AdapterInterface.php:30 — 	public function get_id(): string;
-Adapters/AdapterInterface.php:39 — 	public function get_label(): string;
-Adapters/AdapterInterface.php:48 — 	public function is_available(): bool;
-Adapters/AdapterInterface.php:61 — 	public function register_hooks( string $slug ): void;
-Adapters/AdapterInterface.php:73 — 	public function get_mappable_items(): array;
-Adapters/AdapterRegistry.php:55 — 	public function __construct( string $slug, string $prefix ) {
-Adapters/AdapterRegistry.php:72 — 	public function boot(): void {
-Adapters/AdapterRegistry.php:102 — 	public function register( AdapterInterface $adapter ): void {
-Adapters/AdapterRegistry.php:114 — 	public function get( string $id ): ?AdapterInterface {
-Adapters/AdapterRegistry.php:125 — 	public function get_all(): array {
-Adapters/AdapterRegistry.php:136 — 	public function get_available(): array {
-Adapters/AdapterRegistry.php:155 — 	public function lookup_credits( string $adapter_id, int|string $item_id ): int {
-Adapters/AdapterRegistry.php:246 — 	public function get_slug(): string {
-Adapters/AdapterRegistry.php:257 — 	public function get_prefix(): string {
-Adapters/MemberPress.php:42 — 	public function get_id(): string {
-Adapters/MemberPress.php:49 — 	public function get_label(): string {
-Adapters/MemberPress.php:56 — 	public function is_available(): bool {
-Adapters/MemberPress.php:63 — 	public function register_hooks( string $slug ): void {
-Adapters/MemberPress.php:86 — 	public function gate_purchase( $override, $product ) {
-Adapters/MemberPress.php:96 — 	public function get_mappable_items(): array {
-Adapters/MemberPress.php:136 — 	public function on_transaction_completed( $event ): void {
-Adapters/PMPro.php:42 — 	public function get_id(): string {
-Adapters/PMPro.php:49 — 	public function get_label(): string {
-Adapters/PMPro.php:56 — 	public function is_available(): bool {
-Adapters/PMPro.php:63 — 	public function register_hooks( string $slug ): void {
-Adapters/PMPro.php:83 — 	public function gate_checkout( $continue ): bool {
-Adapters/PMPro.php:100 — 	public function get_mappable_items(): array {
-Adapters/PMPro.php:139 — 	public function on_level_change( int $level_id, int $user_id ): void {
-Adapters/PMPro.php:187 — 	public function on_subscription_payment( $order ): void {
-Adapters/WooCommerce.php:42 — 	public function get_id(): string {
-Adapters/WooCommerce.php:49 — 	public function get_label(): string {
-Adapters/WooCommerce.php:56 — 	public function is_available(): bool {
-Adapters/WooCommerce.php:63 — 	public function register_hooks( string $slug ): void {
-Adapters/WooCommerce.php:92 — 	public function gate_purchasable( $purchasable, $product ): bool {
-Adapters/WooCommerce.php:101 — 	public function print_unavailable_notice(): void {
-Adapters/WooCommerce.php:134 — 	public function get_mappable_items(): array {
-Adapters/WooCommerce.php:179 — 	public function on_order_completed( $order_id ): void {
-Adapters/WooCommerce.php:277 — 	public function on_order_refunded( $order_id, $refund_id = 0 ): void {
-Adapters/WooCommerce.php:316 — 	public function on_order_cancelled( $order_id ): void {
-Adapters/WooMemberships.php:42 — 	public function get_id(): string {
-Adapters/WooMemberships.php:49 — 	public function get_label(): string {
-Adapters/WooMemberships.php:56 — 	public function is_available(): bool {
-Adapters/WooMemberships.php:63 — 	public function register_hooks( string $slug ): void {
-Adapters/WooMemberships.php:73 — 	public function get_mappable_items(): array {
-Adapters/WooMemberships.php:114 — 	public function on_membership_status_changed( $membership, string $old_status, string $new_status ): void {
-Adapters/WooSubscriptions.php:42 — 	public function get_id(): string {
-Adapters/WooSubscriptions.php:49 — 	public function get_label(): string {
-Adapters/WooSubscriptions.php:56 — 	public function is_available(): bool {
-Adapters/WooSubscriptions.php:63 — 	public function register_hooks( string $slug ): void {
-Adapters/WooSubscriptions.php:74 — 	public function get_mappable_items(): array {
-Adapters/WooSubscriptions.php:108 — 	public function on_renewal_payment( $subscription, $order ): void {
-Adapters/WooSubscriptions.php:120 — 	public function on_initial_payment( $subscription ): void {
-Consumer.php:57 — 	public function __construct( string $slug, string $prefix, array $config ) {
-Consumer.php:79 — 	public function register_hooks(): void {
-Consumer.php:103 — 	public function on_hold( int $item_id ): void {
-Consumer.php:178 — 	public function on_deduct( int $item_id ): void {
-Consumer.php:215 — 	public function on_refund( int $item_id ): void {
-Credits.php:44 — 	public static function get_balance( string $slug, int $user_id ): int {
-Credits.php:79 — 	public static function get_ledger( string $slug, int $user_id, int $limit = 50, int $offset = 0 ): array {
-Credits.php:92 — 	public static function count_ledger( string $slug, int $user_id ): int {
-Credits.php:104 — 	public static function is_enabled( string $slug ): bool {
-Credits.php:135 — 	public static function checkout_enabled( string $slug ): bool {
-Credits.php:166 — 	public static function topup( string $slug, int $user_id, int $amount, string $note = '' ): int|false {
-Credits.php:200 — 	public static function hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false {
-Credits.php:238 — 	public static function deduct( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): bool {
-Credits.php:273 — 	public static function refund( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false {
-Credits.php:320 — 	public static function cancel_hold( string $slug, int $user_id, int $item_id ): void {
-Credits.php:336 — 	public static function adjust( string $slug, int $user_id, int $amount, string $note = '' ): int|false {
-Credits.php:359 — 	public static function get_cost( string $slug, string $consumer_id, int $item_id = 0 ): int {
-Credits.php:394 — 	public static function get_purchase_url( string $slug ): string {
-Credits.php:428 — 	public static function cancel_hold_by_id( string $slug, int $user_id, int $hold_id ): void {
-Credits.php:458 — 	public static function purchase_paths( string $slug ): array {
-Credits.php:550 — 	public static function can_purchase( string $slug ): bool {
-Credits.php:577 — 	public static function is_money( string $slug ): bool {
-Credits.php:594 — 	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
-Credits.php:611 — 	public static function hold_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false {
-Credits.php:628 — 	public static function deduct_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): bool {
-Credits.php:645 — 	public static function refund_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false {
-Credits.php:661 — 	public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
-Credits.php:678 — 	public static function balance_money( string $slug, int $user_id, string $currency = '' ): float {
-Credits.php:694 — 	public static function resolve_money_currency( string $slug, string $currency = '' ): string {
-Credits.php:740 — 	public static function invalidate_cache( string $slug, int $user_id ): void {
-Credits.php:757 — 	public static function forget_balance( string $slug, int $user_id ): void {
-Gateways/Abstract_Gateway.php:39 — 	public function handle_webhook( string $slug, array $payload ): \WP_REST_Response {
-Gateways/Abstract_Gateway.php:381 — 	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
-Gateways/Abstract_Gateway.php:409 — 	public function claim_checkout( string $slug, string $session_id ): \WP_REST_Response {
-Gateways/Admin_Form_Renderer.php:58 — 	public static function render( string $slug, array $args = array() ): void {
-Gateways/Admin_Form_Renderer.php:131 — 	public static function sanitize_for_settings_api( $input ): array {
-Gateways/Admin_Form_Renderer.php:223 — 	public static function handle_save( string $slug ): bool {
-Gateways/Admin_Form_Renderer.php:306 — 	public static function get_gateway_views( string $slug ): array {
-Gateways/Admin_Form_Renderer.php:344 — 	public static function render_field( array $field, $value, string $gateway_id ): void {
-Gateways/Admin_Form_Renderer.php:424 — 	public static function webhook_url( string $slug, string $gateway_id ): string {
-Gateways/Admin_Form_Renderer.php:436 — 	public static function get_saved_settings( string $slug ): array {
-Gateways/Gateway_Event.php:28 — 	public const TYPE_CHECKOUT_COMPLETED = 'checkout.completed';
-Gateways/Gateway_Event.php:29 — 	public const TYPE_REFUND             = 'refund';
-Gateways/Gateway_Event.php:44 — 	public function __construct(
-Gateways/Gateway_Registry.php:42 — 	public function __construct( string $slug ) {
-Gateways/Gateway_Registry.php:50 — 	public function boot(): void {
-Gateways/Gateway_Registry.php:63 — 	public function register( GatewayInterface $gateway ): void {
-Gateways/Gateway_Registry.php:67 — 	public function get( string $id ): ?GatewayInterface {
-Gateways/Gateway_Registry.php:74 — 	public function get_all(): array {
-Gateways/Gateway_Registry.php:81 — 	public function get_available(): array {
-Gateways/Gateway_Registry.php:88 — 	public function get_slug(): string {
-Gateways/Gateway_Registry.php:112 — 	public static function for_slug( string $slug ): self {
-Gateways/Gateway_Registry.php:122 — 	public static function reset_for_tests(): void {
-Gateways/GatewayInterface.php:37 — 	public function get_id(): string;
-Gateways/GatewayInterface.php:44 — 	public function get_label(): string;
-Gateways/GatewayInterface.php:51 — 	public function is_available(): bool;
-Gateways/GatewayInterface.php:61 — 	public function get_settings_fields(): array;
-Gateways/GatewayInterface.php:87 — 	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string;
-Gateways/GatewayInterface.php:101 — 	public function verify_signature( string $raw_body, array $headers ): bool;
-Gateways/GatewayInterface.php:114 — 	public function normalize_event( array $payload ): ?Gateway_Event;
-Gateways/GatewayInterface.php:129 — 	public function handle_webhook( string $slug, array $payload ): \WP_REST_Response;
-Gateways/GatewayInterface.php:149 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool;
-Gateways/Idempotency.php:50 — 	public static function is_processed( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Idempotency.php:67 — 	public static function mark_processed( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Idempotency.php:92 — 	public static function release( string $slug, string $gateway, string $event_id ): void {
-Gateways/Idempotency.php:96 — 	public static function reset_for_tests( string $slug, string $gateway ): void {
-Gateways/Pack_Admin_Renderer.php:67 — 	public static function render( string $option_name, array $args = array() ): void {
-Gateways/Pack_Admin_Renderer.php:264 — 	public static function sanitize( $input ): array {
-Gateways/PayPal.php:31 — 	public const ID = 'paypal';
-Gateways/PayPal.php:36 — 	public function get_id(): string {
-Gateways/PayPal.php:40 — 	public function get_label(): string {
-Gateways/PayPal.php:44 — 	public function is_available(): bool {
-Gateways/PayPal.php:53 — 	public function get_settings_fields(): array {
-Gateways/PayPal.php:78 — 	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string {
-Gateways/PayPal.php:259 — 	public function verify_signature( string $raw_body, array $headers ): bool {
-Gateways/PayPal.php:278 — 	public function normalize_event( array $payload ): ?Gateway_Event {
-Gateways/PayPal.php:430 — 	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
-Gateways/PayPal.php:538 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool {
-Gateways/Pending_Checkouts.php:95 — 	public static function put( string $slug, string $session_id, array $payload, int $ttl_seconds = self::DEFAULT_TTL ): void {
-Gateways/Pending_Checkouts.php:131 — 	public static function get( string $slug, string $session_id ): ?array {
-Gateways/Pending_Checkouts.php:177 — 	public static function for_user( string $slug, int $user_id ): array {
-Gateways/Pending_Checkouts.php:250 — 	public static function forget( string $slug, string $session_id ): void {
-Gateways/Pending_Checkouts.php:317 — 	public static function reset_for_tests( string $slug ): void {
-Gateways/Pricing.php:50 — 	public static function resolve( string $slug, array $params ): array {
-Gateways/Pricing.php:147 — 	public function __construct( public string $error_code, string $message, public int $http_status = 400 ) {
-Gateways/Processed_Events.php:40 — 	public static function table_name( string $prefix ): string {
-Gateways/Processed_Events.php:54 — 	public static function maybe_create_table( string $prefix ): void {
-Gateways/Processed_Events.php:91 — 	public static function claim( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Processed_Events.php:138 — 	public static function release( string $slug, string $gateway, string $event_id ): void {
-Gateways/Processed_Events.php:155 — 	public static function exists( string $slug, string $gateway, string $event_id ): bool {
-Gateways/Processed_Events.php:182 — 	public static function reset_for_tests( string $slug, string $gateway ): void {
-Gateways/Signature_Verifier.php:57 — 	public static function verify_stripe(
-Gateways/Signature_Verifier.php:141 — 	public static function verify_paypal(
-Gateways/Stripe.php:34 — 	public const ID = 'stripe';
-Gateways/Stripe.php:36 — 	public function get_id(): string {
-Gateways/Stripe.php:40 — 	public function get_label(): string {
-Gateways/Stripe.php:44 — 	public function is_available(): bool {
-Gateways/Stripe.php:52 — 	public function get_settings_fields(): array {
-Gateways/Stripe.php:80 — 	public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string {
-Gateways/Stripe.php:187 — 	public function verify_signature( string $raw_body, array $headers ): bool {
-Gateways/Stripe.php:195 — 	public function normalize_event( array $payload ): ?Gateway_Event {
-Gateways/Stripe.php:292 — 	public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event {
-Gateways/Stripe.php:338 — 	public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool {
-Gateways/Transaction_Log.php:35 — 	public const KIND_CHECKOUT = 'checkout';
-Gateways/Transaction_Log.php:36 — 	public const KIND_REFUND   = 'refund';
-Gateways/Transaction_Log.php:44 — 	public static function table_name( string $prefix ): string {
-Gateways/Transaction_Log.php:70 — 	public static function maybe_create_table( string $prefix ): void {
-Gateways/Transaction_Log.php:152 — 	public static function insert_checkout( array $row ): int {
-Gateways/Transaction_Log.php:185 — 	public static function insert_refund( array $row ): int {
-Gateways/Transaction_Log.php:213 — 	public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array {
-Gateways/Transaction_Log.php:243 — 	public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array {
-Gateways/Transaction_Log.php:271 — 	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
-Gateways/Transaction_Log.php:301 — 	public static function list_transactions( string $slug, array $args = array() ): array {
-Gateways/Transaction_Log.php:333 — 	public static function count_transactions( string $slug, array $args = array() ): int {
-Gateways/Webhook_Controller.php:49 — 	public function __construct( string $slug ) {
-Gateways/Webhook_Controller.php:56 — 	public function register_routes(): void {
-Gateways/Webhook_Controller.php:134 — 	public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-Gateways/Webhook_Controller.php:193 — 	public function handle_webhook( \WP_REST_Request $request ): \WP_REST_Response {
-Gateways/Webhook_Controller.php:230 — 	public function claim_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-Gateways/Webhook_Controller.php:277 — 	public function admin_refund( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-Gateways/Webhook_Controller.php:305 — 	public function check_logged_in(): bool {
-Gateways/Webhook_Controller.php:309 — 	public function check_admin(): bool {
-Ledger.php:33 — 	public static function table_name( string $prefix ): string {
-Ledger.php:46 — 	public static function maybe_create_table( string $prefix ): void {
-Ledger.php:85 — 	public static function get_balance( string $prefix, int $user_id ): int {
-Ledger.php:111 — 	public static function get_history( string $prefix, int $user_id, int $limit = 50, int $offset = 0 ): array {
-Ledger.php:137 — 	public static function count_for_user( string $prefix, int $user_id ): int {
-Ledger.php:158 — 	public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '' ): int|false {
-Ledger.php:190 — 	public static function deduct_with_hold_release( string $prefix, int $user_id, int $cost, int $item_id, string $note = '' ): bool {
-Ledger.php:227 — 	public static function cancel_hold( string $prefix, int $user_id, int $item_id ): void {
-Ledger.php:264 — 	public static function cancel_hold_by_id( string $prefix, int $user_id, int $hold_id ): void {
-Money.php:101 — 	public static function decimals_for( string $currency ): int {
-Money.php:132 — 	public static function factor_for( string $currency ): int {
-Money.php:147 — 	public static function to_minor( $amount, string $currency = 'USD' ): int {
-Money.php:159 — 	public static function to_major( $minor, string $currency = 'USD' ): float {
-Registry.php:60 — 	public function register( array $config ): void {
-Registry.php:99 — 	public function get( string $slug ): ?array {
-Registry.php:116 — 	public function return_url_for( string $slug ): string {
-Registry.php:131 — 	public function get_slugs(): array {
-Registry.php:141 — 	public function get_all(): array {
-Registry.php:151 — 	public function boot_all(): void {
-Registry.php:302 — 	public static function instance(): self {
-REST.php:59 — 	public function __construct( string $slug, string $prefix, string $user_type ) {
-REST.php:71 — 	public function register_routes(): void {
-REST.php:152 — 	public function get_balance( \WP_REST_Request $request ): \WP_REST_Response {
-REST.php:175 — 	public function get_history( \WP_REST_Request $request ): \WP_REST_Response {
-REST.php:197 — 	public function admin_topup( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-REST.php:233 — 	public function check_balance_permission( \WP_REST_Request $request ): bool {
-REST.php:260 — 	public function check_admin_permission(): bool {
-Template.php:42 — 	public static function get( string $name, array $args = array(), string $plugin_slug = '' ): void {
-Template.php:73 — 	public static function locate( string $name, string $plugin_slug = '' ): string {
-Versions.php:45 — 	public function register( string $version, callable $callback ): bool {
-Versions.php:60 — 	public function latest_version(): string|false {
-Versions.php:75 — 	public function latest_version_callback(): callable {
-Versions.php:89 — 	public static function instance(): self {
-Versions.php:102 — 	public static function initialize_latest_version(): void {
+Adapters/AdapterInterface.php:30 — public function get_id(): string;
+Adapters/AdapterInterface.php:39 — public function get_label(): string;
+Adapters/AdapterInterface.php:48 — public function is_available(): bool;
+Adapters/AdapterInterface.php:61 — public function register_hooks( string $slug ): void;
+Adapters/AdapterInterface.php:73 — public function get_mappable_items(): array;
+Adapters/AdapterRegistry.php:55 — public function __construct( string $slug, string $prefix )
+Adapters/AdapterRegistry.php:72 — public function boot(): void
+Adapters/AdapterRegistry.php:102 — public function register( AdapterInterface $adapter ): void
+Adapters/AdapterRegistry.php:114 — public function get( string $id ): ?AdapterInterface
+Adapters/AdapterRegistry.php:125 — public function get_all(): array
+Adapters/AdapterRegistry.php:136 — public function get_available(): array
+Adapters/AdapterRegistry.php:155 — public function lookup_credits( string $adapter_id, int|string $item_id ): int
+Adapters/AdapterRegistry.php:246 — public function get_slug(): string
+Adapters/AdapterRegistry.php:257 — public function get_prefix(): string
+Adapters/MemberPress.php:42 — public function get_id(): string
+Adapters/MemberPress.php:49 — public function get_label(): string
+Adapters/MemberPress.php:56 — public function is_available(): bool
+Adapters/MemberPress.php:63 — public function register_hooks( string $slug ): void
+Adapters/MemberPress.php:86 — public function gate_purchase( $override, $product )
+Adapters/MemberPress.php:96 — public function get_mappable_items(): array
+Adapters/MemberPress.php:136 — public function on_transaction_completed( $event ): void
+Adapters/PMPro.php:42 — public function get_id(): string
+Adapters/PMPro.php:49 — public function get_label(): string
+Adapters/PMPro.php:56 — public function is_available(): bool
+Adapters/PMPro.php:63 — public function register_hooks( string $slug ): void
+Adapters/PMPro.php:83 — public function gate_checkout( $continue ): bool
+Adapters/PMPro.php:100 — public function get_mappable_items(): array
+Adapters/PMPro.php:139 — public function on_level_change( int $level_id, int $user_id ): void
+Adapters/PMPro.php:187 — public function on_subscription_payment( $order ): void
+Adapters/WooCommerce.php:42 — public function get_id(): string
+Adapters/WooCommerce.php:49 — public function get_label(): string
+Adapters/WooCommerce.php:56 — public function is_available(): bool
+Adapters/WooCommerce.php:63 — public function register_hooks( string $slug ): void
+Adapters/WooCommerce.php:92 — public function gate_purchasable( $purchasable, $product ): bool
+Adapters/WooCommerce.php:101 — public function print_unavailable_notice(): void
+Adapters/WooCommerce.php:134 — public function get_mappable_items(): array
+Adapters/WooCommerce.php:179 — public function on_order_completed( $order_id ): void
+Adapters/WooCommerce.php:277 — public function on_order_refunded( $order_id, $refund_id = 0 ): void
+Adapters/WooCommerce.php:316 — public function on_order_cancelled( $order_id ): void
+Adapters/WooMemberships.php:42 — public function get_id(): string
+Adapters/WooMemberships.php:49 — public function get_label(): string
+Adapters/WooMemberships.php:56 — public function is_available(): bool
+Adapters/WooMemberships.php:63 — public function register_hooks( string $slug ): void
+Adapters/WooMemberships.php:73 — public function get_mappable_items(): array
+Adapters/WooMemberships.php:114 — public function on_membership_status_changed( $membership, string $old_status, string $new_status ): void
+Adapters/WooSubscriptions.php:42 — public function get_id(): string
+Adapters/WooSubscriptions.php:49 — public function get_label(): string
+Adapters/WooSubscriptions.php:56 — public function is_available(): bool
+Adapters/WooSubscriptions.php:63 — public function register_hooks( string $slug ): void
+Adapters/WooSubscriptions.php:74 — public function get_mappable_items(): array
+Adapters/WooSubscriptions.php:108 — public function on_renewal_payment( $subscription, $order ): void
+Adapters/WooSubscriptions.php:120 — public function on_initial_payment( $subscription ): void
+Consumer.php:57 — public function __construct( string $slug, string $prefix, array $config )
+Consumer.php:79 — public function register_hooks(): void
+Consumer.php:103 — public function on_hold( int $item_id ): void
+Consumer.php:178 — public function on_deduct( int $item_id ): void
+Consumer.php:215 — public function on_refund( int $item_id ): void
+Credits.php:44 — public static function get_balance( string $slug, int $user_id ): int
+Credits.php:79 — public static function get_ledger( string $slug, int $user_id, int $limit = 50, int $offset = 0 ): array
+Credits.php:92 — public static function count_ledger( string $slug, int $user_id ): int
+Credits.php:104 — public static function is_enabled( string $slug ): bool
+Credits.php:135 — public static function checkout_enabled( string $slug ): bool
+Credits.php:166 — public static function topup( string $slug, int $user_id, int $amount, string $note = '' ): int|false
+Credits.php:200 — public static function hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
+Credits.php:238 — public static function deduct( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): bool
+Credits.php:273 — public static function refund( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
+Credits.php:320 — public static function cancel_hold( string $slug, int $user_id, int $item_id ): void
+Credits.php:336 — public static function adjust( string $slug, int $user_id, int $amount, string $note = '' ): int|false
+Credits.php:359 — public static function get_cost( string $slug, string $consumer_id, int $item_id = 0 ): int
+Credits.php:394 — public static function get_purchase_url( string $slug ): string
+Credits.php:428 — public static function cancel_hold_by_id( string $slug, int $user_id, int $hold_id ): void
+Credits.php:458 — public static function purchase_paths( string $slug ): array
+Credits.php:550 — public static function can_purchase( string $slug ): bool
+Credits.php:577 — public static function is_money( string $slug ): bool
+Credits.php:594 — public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false
+Credits.php:611 — public static function hold_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
+Credits.php:628 — public static function deduct_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): bool
+Credits.php:645 — public static function refund_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
+Credits.php:661 — public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false
+Credits.php:678 — public static function balance_money( string $slug, int $user_id, string $currency = '' ): float
+Credits.php:694 — public static function resolve_money_currency( string $slug, string $currency = '' ): string
+Credits.php:740 — public static function invalidate_cache( string $slug, int $user_id ): void
+Credits.php:757 — public static function forget_balance( string $slug, int $user_id ): void
+Gateways/Abstract_Gateway.php:39 — public function handle_webhook( string $slug, array $payload ): \WP_REST_Response
+Gateways/Abstract_Gateway.php:381 — public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event
+Gateways/Abstract_Gateway.php:409 — public function claim_checkout( string $slug, string $session_id ): \WP_REST_Response
+Gateways/Admin_Form_Renderer.php:58 — public static function render( string $slug, array $args = array() ): void
+Gateways/Admin_Form_Renderer.php:131 — public static function sanitize_for_settings_api( $input ): array
+Gateways/Admin_Form_Renderer.php:223 — public static function handle_save( string $slug ): bool
+Gateways/Admin_Form_Renderer.php:306 — public static function get_gateway_views( string $slug ): array
+Gateways/Admin_Form_Renderer.php:344 — public static function render_field( array $field, $value, string $gateway_id ): void
+Gateways/Admin_Form_Renderer.php:424 — public static function webhook_url( string $slug, string $gateway_id ): string
+Gateways/Admin_Form_Renderer.php:436 — public static function get_saved_settings( string $slug ): array
+Gateways/GatewayInterface.php:37 — public function get_id(): string;
+Gateways/GatewayInterface.php:44 — public function get_label(): string;
+Gateways/GatewayInterface.php:51 — public function is_available(): bool;
+Gateways/GatewayInterface.php:61 — public function get_settings_fields(): array;
+Gateways/GatewayInterface.php:87 — public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string;
+Gateways/GatewayInterface.php:101 — public function verify_signature( string $raw_body, array $headers ): bool;
+Gateways/GatewayInterface.php:114 — public function normalize_event( array $payload ): ?Gateway_Event;
+Gateways/GatewayInterface.php:129 — public function handle_webhook( string $slug, array $payload ): \WP_REST_Response;
+Gateways/GatewayInterface.php:149 — public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool;
+Gateways/Gateway_Event.php:28 — public const TYPE_CHECKOUT_COMPLETED = 'checkout.completed';
+Gateways/Gateway_Event.php:29 — public const TYPE_REFUND             = 'refund';
+Gateways/Gateway_Event.php:44 — public function __construct(
+Gateways/Gateway_Registry.php:42 — public function __construct( string $slug )
+Gateways/Gateway_Registry.php:50 — public function boot(): void
+Gateways/Gateway_Registry.php:63 — public function register( GatewayInterface $gateway ): void
+Gateways/Gateway_Registry.php:67 — public function get( string $id ): ?GatewayInterface
+Gateways/Gateway_Registry.php:74 — public function get_all(): array
+Gateways/Gateway_Registry.php:81 — public function get_available(): array
+Gateways/Gateway_Registry.php:88 — public function get_slug(): string
+Gateways/Gateway_Registry.php:112 — public static function for_slug( string $slug ): self
+Gateways/Gateway_Registry.php:122 — public static function reset_for_tests(): void
+Gateways/Idempotency.php:50 — public static function is_processed( string $slug, string $gateway, string $event_id ): bool
+Gateways/Idempotency.php:67 — public static function mark_processed( string $slug, string $gateway, string $event_id ): bool
+Gateways/Idempotency.php:92 — public static function release( string $slug, string $gateway, string $event_id ): void
+Gateways/Idempotency.php:96 — public static function reset_for_tests( string $slug, string $gateway ): void
+Gateways/Pack_Admin_Renderer.php:67 — public static function render( string $option_name, array $args = array() ): void
+Gateways/Pack_Admin_Renderer.php:264 — public static function sanitize( $input ): array
+Gateways/PayPal.php:31 — public const ID = 'paypal';
+Gateways/PayPal.php:36 — public function get_id(): string
+Gateways/PayPal.php:40 — public function get_label(): string
+Gateways/PayPal.php:44 — public function is_available(): bool
+Gateways/PayPal.php:53 — public function get_settings_fields(): array
+Gateways/PayPal.php:78 — public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string
+Gateways/PayPal.php:259 — public function verify_signature( string $raw_body, array $headers ): bool
+Gateways/PayPal.php:278 — public function normalize_event( array $payload ): ?Gateway_Event
+Gateways/PayPal.php:430 — public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event
+Gateways/PayPal.php:538 — public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool
+Gateways/Pending_Checkouts.php:95 — public static function put( string $slug, string $session_id, array $payload, int $ttl_seconds = self::DEFAULT_TTL ): void
+Gateways/Pending_Checkouts.php:131 — public static function get( string $slug, string $session_id ): ?array
+Gateways/Pending_Checkouts.php:177 — public static function for_user( string $slug, int $user_id ): array
+Gateways/Pending_Checkouts.php:250 — public static function forget( string $slug, string $session_id ): void
+Gateways/Pending_Checkouts.php:317 — public static function reset_for_tests( string $slug ): void
+Gateways/Pricing.php:50 — public static function resolve( string $slug, array $params ): array
+Gateways/Pricing.php:147 — public function __construct( public string $error_code, string $message, public int $http_status = 400 )
+Gateways/Processed_Events.php:40 — public static function table_name( string $prefix ): string
+Gateways/Processed_Events.php:54 — public static function maybe_create_table( string $prefix ): void
+Gateways/Processed_Events.php:91 — public static function claim( string $slug, string $gateway, string $event_id ): bool
+Gateways/Processed_Events.php:138 — public static function release( string $slug, string $gateway, string $event_id ): void
+Gateways/Processed_Events.php:155 — public static function exists( string $slug, string $gateway, string $event_id ): bool
+Gateways/Processed_Events.php:182 — public static function reset_for_tests( string $slug, string $gateway ): void
+Gateways/Signature_Verifier.php:57 — public static function verify_stripe(
+Gateways/Signature_Verifier.php:141 — public static function verify_paypal(
+Gateways/Stripe.php:34 — public const ID = 'stripe';
+Gateways/Stripe.php:36 — public function get_id(): string
+Gateways/Stripe.php:40 — public function get_label(): string
+Gateways/Stripe.php:44 — public function is_available(): bool
+Gateways/Stripe.php:52 — public function get_settings_fields(): array
+Gateways/Stripe.php:80 — public function create_checkout( string $slug, int $user_id, int $credits, int $price_cents, string $currency = 'USD', ?string $return_url = null ): string
+Gateways/Stripe.php:187 — public function verify_signature( string $raw_body, array $headers ): bool
+Gateways/Stripe.php:195 — public function normalize_event( array $payload ): ?Gateway_Event
+Gateways/Stripe.php:292 — public function retrieve_checkout_event( string $slug, string $session_id ): ?Gateway_Event
+Gateways/Stripe.php:338 — public function refund( string $slug, string $session_id, ?int $amount_cents = null ): bool
+Gateways/Transaction_Log.php:35 — public const KIND_CHECKOUT = 'checkout';
+Gateways/Transaction_Log.php:36 — public const KIND_REFUND   = 'refund';
+Gateways/Transaction_Log.php:44 — public static function table_name( string $prefix ): string
+Gateways/Transaction_Log.php:70 — public static function maybe_create_table( string $prefix ): void
+Gateways/Transaction_Log.php:152 — public static function insert_checkout( array $row ): int
+Gateways/Transaction_Log.php:185 — public static function insert_refund( array $row ): int
+Gateways/Transaction_Log.php:213 — public static function find_checkout( string $slug, string $gateway, string $session_id ): ?array
+Gateways/Transaction_Log.php:243 — public static function find_checkout_by_payment_intent( string $slug, string $gateway, string $payment_intent ): ?array
+Gateways/Transaction_Log.php:271 — public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void
+Gateways/Transaction_Log.php:301 — public static function list_transactions( string $slug, array $args = array() ): array
+Gateways/Transaction_Log.php:333 — public static function count_transactions( string $slug, array $args = array() ): int
+Gateways/Webhook_Controller.php:49 — public function __construct( string $slug )
+Gateways/Webhook_Controller.php:56 — public function register_routes(): void
+Gateways/Webhook_Controller.php:134 — public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error
+Gateways/Webhook_Controller.php:193 — public function handle_webhook( \WP_REST_Request $request ): \WP_REST_Response
+Gateways/Webhook_Controller.php:230 — public function claim_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error
+Gateways/Webhook_Controller.php:277 — public function admin_refund( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error
+Gateways/Webhook_Controller.php:305 — public function check_logged_in(): bool
+Gateways/Webhook_Controller.php:309 — public function check_admin(): bool
+Ledger.php:33 — public static function table_name( string $prefix ): string
+Ledger.php:46 — public static function maybe_create_table( string $prefix ): void
+Ledger.php:85 — public static function get_balance( string $prefix, int $user_id ): int
+Ledger.php:111 — public static function get_history( string $prefix, int $user_id, int $limit = 50, int $offset = 0 ): array
+Ledger.php:137 — public static function count_for_user( string $prefix, int $user_id ): int
+Ledger.php:158 — public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '' ): int|false
+Ledger.php:190 — public static function deduct_with_hold_release( string $prefix, int $user_id, int $cost, int $item_id, string $note = '' ): bool
+Ledger.php:227 — public static function cancel_hold( string $prefix, int $user_id, int $item_id ): void
+Ledger.php:264 — public static function cancel_hold_by_id( string $prefix, int $user_id, int $hold_id ): void
+Money.php:101 — public static function decimals_for( string $currency ): int
+Money.php:132 — public static function factor_for( string $currency ): int
+Money.php:147 — public static function to_minor( $amount, string $currency = 'USD' ): int
+Money.php:159 — public static function to_major( $minor, string $currency = 'USD' ): float
+REST.php:59 — public function __construct( string $slug, string $prefix, string $user_type )
+REST.php:71 — public function register_routes(): void
+REST.php:152 — public function get_balance( \WP_REST_Request $request ): \WP_REST_Response
+REST.php:175 — public function get_history( \WP_REST_Request $request ): \WP_REST_Response
+REST.php:197 — public function admin_topup( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error
+REST.php:233 — public function check_balance_permission( \WP_REST_Request $request ): bool
+REST.php:260 — public function check_admin_permission(): bool
+Registry.php:60 — public function register( array $config ): void
+Registry.php:99 — public function get( string $slug ): ?array
+Registry.php:116 — public function return_url_for( string $slug ): string
+Registry.php:131 — public function get_slugs(): array
+Registry.php:141 — public function get_all(): array
+Registry.php:151 — public function boot_all(): void
+Registry.php:302 — public static function instance(): self
+Template.php:42 — public static function get( string $name, array $args = array(), string $plugin_slug = '' ): void
+Template.php:73 — public static function locate( string $name, string $plugin_slug = '' ): string
+Versions.php:45 — public function register( string $version, callable $callback ): bool
+Versions.php:60 — public function latest_version(): string|false
+Versions.php:75 — public function latest_version_callback(): callable
+Versions.php:89 — public static function instance(): self
+Versions.php:102 — public static function initialize_latest_version(): void

@@ -199,12 +199,14 @@ TMP_SNAPSHOT="/tmp/wcb-sdk-api-surface-$$.txt"
 
 # Extract every public method + public const from src/, sort, output.
 {
-    find src -name '*.php' -type f | sort | while read -r f; do
+    find src -name '*.php' -type f | LC_ALL=C sort | while read -r f; do
         rel="${f#src/}"
-        grep -nE '^\s*(public|public static)\s+(function|const)\s+\w+' "$f" 2>/dev/null \
-            | sed -E "s#^([0-9]+):\s*#${rel}:\1 — #" \
-            | sed -E 's#\s+\{.*##' \
-            | sed -E 's#\s+$##'
+        # POSIX classes, not \s / \w: BSD sed (macOS) and GNU sed (CI)
+        # disagree on those, which made a snapshot taken on one fail on the other.
+        grep -nE '^[[:space:]]*(public|public static)[[:space:]]+(function|const)[[:space:]]+[[:alnum:]_]+' "$f" 2>/dev/null \
+            | sed -E "s#^([0-9]+):[[:space:]]*#${rel}:\1 — #" \
+            | sed -E 's#[[:space:]]+\{.*##' \
+            | sed -E 's#[[:space:]]+$##'
     done
 } > "$TMP_SNAPSHOT"
 
