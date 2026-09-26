@@ -96,121 +96,146 @@ final class Pack_Admin_Renderer {
 		}
 		?>
 		<div class="wbcom-credits-packs" data-option="<?php echo esc_attr( $option_name ); ?>">
-			<fieldset>
-				<legend><?php esc_html_e( 'Credit Packs', 'wbcom-credits-sdk' ); ?></legend>
+			<h3 class="wbcom-credits-packs__title"><?php esc_html_e( 'Credit Packs', 'wbcom-credits-sdk' ); ?></h3>
 
-				<p class="wbcom-credits-packs-field">
-					<label for="<?php echo esc_attr( $option_name ); ?>-currency">
-						<?php esc_html_e( 'Currency', 'wbcom-credits-sdk' ); ?>
-					</label>
-					<input
-						type="text"
-						id="<?php echo esc_attr( $option_name ); ?>-currency"
-						name="<?php echo esc_attr( $option_name ); ?>[currency]"
-						value="<?php echo esc_attr( $currency ); ?>"
-						class="small-text"
-						maxlength="3"
-					/>
-				</p>
+			<table class="form-table wbcom-credits-packs__fields" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr( $option_name ); ?>-currency">
+								<?php esc_html_e( 'Currency', 'wbcom-credits-sdk' ); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="text"
+								id="<?php echo esc_attr( $option_name ); ?>-currency"
+								name="<?php echo esc_attr( $option_name ); ?>[currency]"
+								value="<?php echo esc_attr( $currency ); ?>"
+								class="small-text"
+								maxlength="3"
+							/>
+						</td>
+					</tr>
+				</tbody>
+			</table>
 
-				<table class="widefat wbcom-credits-packs-table">
-					<thead>
+			<table class="widefat wbcom-credits-packs-table">
+				<thead>
+					<tr>
+						<th><?php esc_html_e( 'Credits', 'wbcom-credits-sdk' ); ?></th>
+						<th><?php esc_html_e( 'Price', 'wbcom-credits-sdk' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $rows as $i => $row ) : ?>
 						<tr>
-							<th><?php esc_html_e( 'Credits', 'wbcom-credits-sdk' ); ?></th>
-							<th><?php esc_html_e( 'Price', 'wbcom-credits-sdk' ); ?></th>
+							<td>
+								<input
+									type="number"
+									min="0"
+									step="1"
+									name="<?php echo esc_attr( $option_name ); ?>[packs][<?php echo esc_attr( (string) $i ); ?>][credits]"
+									value="<?php echo esc_attr( $row['credits'] ); ?>"
+									class="small-text"
+								/>
+							</td>
+							<td>
+								<input
+									type="number"
+									min="0"
+									step="0.01"
+									name="<?php echo esc_attr( $option_name ); ?>[packs][<?php echo esc_attr( (string) $i ); ?>][price]"
+									value="<?php echo esc_attr( $row['price'] ); ?>"
+									class="small-text"
+								/>
+							</td>
 						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $rows as $i => $row ) : ?>
-							<tr>
-								<td>
-									<input
-										type="number"
-										min="0"
-										step="1"
-										name="<?php echo esc_attr( $option_name ); ?>[packs][<?php echo esc_attr( (string) $i ); ?>][credits]"
-										value="<?php echo esc_attr( $row['credits'] ); ?>"
-										class="small-text"
-									/>
-								</td>
-								<td>
-									<input
-										type="number"
-										min="0"
-										step="0.01"
-										name="<?php echo esc_attr( $option_name ); ?>[packs][<?php echo esc_attr( (string) $i ); ?>][price]"
-										value="<?php echo esc_attr( $row['price'] ); ?>"
-										class="small-text"
-									/>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
 
-				<p class="description">
-					<?php esc_html_e( 'Fill in any blank row to add a pack. Rows left blank are ignored.', 'wbcom-credits-sdk' ); ?>
-				</p>
+			<p class="description">
+				<?php esc_html_e( 'Fill in any blank row to add a pack. Rows left blank are ignored.', 'wbcom-credits-sdk' ); ?>
+			</p>
 
-				<h4><?php esc_html_e( 'Custom Amount', 'wbcom-credits-sdk' ); ?></h4>
+			<h4 class="wbcom-credits-packs__subheading"><?php esc_html_e( 'Custom Amount', 'wbcom-credits-sdk' ); ?></h4>
 
-				<p class="wbcom-credits-packs-field">
-					<label>
-						<input
-							type="checkbox"
-							name="<?php echo esc_attr( $option_name ); ?>[custom_enabled]"
-							value="1"
-							<?php checked( $custom_enabled ); ?>
-						/>
-						<?php esc_html_e( 'Allow customers to enter a custom credit amount', 'wbcom-credits-sdk' ); ?>
-					</label>
-				</p>
-
-				<p class="wbcom-credits-packs-field">
-					<label for="<?php echo esc_attr( $option_name ); ?>-rate-cents">
-						<?php esc_html_e( 'Rate (cents per credit)', 'wbcom-credits-sdk' ); ?>
-					</label>
-					<input
-						type="number"
-						min="0"
-						step="1"
-						id="<?php echo esc_attr( $option_name ); ?>-rate-cents"
-						name="<?php echo esc_attr( $option_name ); ?>[rate_cents]"
-						value="<?php echo esc_attr( (string) $rate_cents ); ?>"
-						class="small-text"
-					/>
-				</p>
-
-				<p class="wbcom-credits-packs-field">
-					<label for="<?php echo esc_attr( $option_name ); ?>-min-credits">
-						<?php esc_html_e( 'Minimum credits', 'wbcom-credits-sdk' ); ?>
-					</label>
-					<input
-						type="number"
-						min="1"
-						step="1"
-						id="<?php echo esc_attr( $option_name ); ?>-min-credits"
-						name="<?php echo esc_attr( $option_name ); ?>[min_credits]"
-						value="<?php echo esc_attr( (string) $min_credits ); ?>"
-						class="small-text"
-					/>
-				</p>
-
-				<p class="wbcom-credits-packs-field">
-					<label for="<?php echo esc_attr( $option_name ); ?>-max-credits">
-						<?php esc_html_e( 'Maximum credits', 'wbcom-credits-sdk' ); ?>
-					</label>
-					<input
-						type="number"
-						min="0"
-						step="1"
-						id="<?php echo esc_attr( $option_name ); ?>-max-credits"
-						name="<?php echo esc_attr( $option_name ); ?>[max_credits]"
-						value="<?php echo esc_attr( $max_credits > 0 ? (string) $max_credits : '' ); ?>"
-						class="small-text"
-					/>
-				</p>
-			</fieldset>
+			<table class="form-table wbcom-credits-packs__fields" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr( $option_name ); ?>-custom-enabled">
+								<?php esc_html_e( 'Allow custom amount', 'wbcom-credits-sdk' ); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="checkbox"
+								id="<?php echo esc_attr( $option_name ); ?>-custom-enabled"
+								name="<?php echo esc_attr( $option_name ); ?>[custom_enabled]"
+								value="1"
+								<?php checked( $custom_enabled ); ?>
+							/>
+							<p class="description"><?php esc_html_e( 'Lets customers enter a custom credit amount instead of picking a pack.', 'wbcom-credits-sdk' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr( $option_name ); ?>-rate-cents">
+								<?php esc_html_e( 'Rate (cents per credit)', 'wbcom-credits-sdk' ); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								id="<?php echo esc_attr( $option_name ); ?>-rate-cents"
+								name="<?php echo esc_attr( $option_name ); ?>[rate_cents]"
+								value="<?php echo esc_attr( (string) $rate_cents ); ?>"
+								class="small-text"
+							/>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr( $option_name ); ?>-min-credits">
+								<?php esc_html_e( 'Minimum credits', 'wbcom-credits-sdk' ); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="number"
+								min="1"
+								step="1"
+								id="<?php echo esc_attr( $option_name ); ?>-min-credits"
+								name="<?php echo esc_attr( $option_name ); ?>[min_credits]"
+								value="<?php echo esc_attr( (string) $min_credits ); ?>"
+								class="small-text"
+							/>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo esc_attr( $option_name ); ?>-max-credits">
+								<?php esc_html_e( 'Maximum credits', 'wbcom-credits-sdk' ); ?>
+							</label>
+						</th>
+						<td>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								id="<?php echo esc_attr( $option_name ); ?>-max-credits"
+								name="<?php echo esc_attr( $option_name ); ?>[max_credits]"
+								value="<?php echo esc_attr( $max_credits > 0 ? (string) $max_credits : '' ); ?>"
+								class="small-text"
+							/>
+						</td>
+					</tr>
+				</tbody>
+			</table>
 		</div>
 		<?php
 	}

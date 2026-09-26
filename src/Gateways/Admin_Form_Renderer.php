@@ -360,10 +360,13 @@ final class Admin_Form_Renderer {
 			</th>
 			<td>
 				<?php if ( 'bool' === $type ) : ?>
-					<label>
-						<input type="checkbox" id="<?php echo esc_attr( $input_id ); ?>" name="<?php echo esc_attr( $input_name ); ?>" value="1" <?php checked( ! empty( $value ) ); ?> />
-						<?php echo esc_html( $label ); ?>
-					</label>
+					<?php
+					// No repeated caption: the row's own <th><label> above
+					// already names this field, so echoing the same text
+					// again next to the checkbox is redundant (and reads as
+					// contradictory next to an "Off" status elsewhere).
+					?>
+					<input type="checkbox" id="<?php echo esc_attr( $input_id ); ?>" name="<?php echo esc_attr( $input_name ); ?>" value="1" <?php checked( ! empty( $value ) ); ?> />
 				<?php elseif ( 'select' === $type ) : ?>
 					<select id="<?php echo esc_attr( $input_id ); ?>" name="<?php echo esc_attr( $input_name ); ?>">
 						<?php foreach ( (array) ( $field['options'] ?? array() ) as $opt_value => $opt_label ) : ?>
