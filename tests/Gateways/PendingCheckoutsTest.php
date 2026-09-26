@@ -114,4 +114,70 @@ final class PendingCheckoutsTest extends TestCase {
 		);
 		self::assertNull( Pending_Checkouts::get( 'plug-b', 'cs_shared' ) );
 	}
+
+	public function test_for_user_returns_only_that_users_non_expired_entries(): void {
+		Pending_Checkouts::put(
+			'plug',
+			'cs_mine_1',
+			array( 'gateway' => 'stripe', 'user_id' => 9, 'credits' => 10, 'price_cents' => 100, 'currency' => 'USD' )
+		);
+		Pending_Checkouts::put(
+			'plug',
+			'cs_mine_2',
+			array( 'gateway' => 'paypal', 'user_id' => 9, 'credits' => 20, 'price_cents' => 200, 'currency' => 'USD' )
+		);
+		Pending_Checkouts::put(
+			'plug',
+			'cs_other',
+			array( 'gateway' => 'stripe', 'user_id' => 42, 'credits' => 5, 'price_cents' => 50, 'currency' => 'USD' )
+		);
+
+		$rows = Pending_Checkouts::for_user( 'plug', 9 );
+
+		self::assertCount( 2, $rows );
+		$session_ids = array_column( $rows, 'session_id' );
+		self::assertContains( 'cs_mine_1', $session_ids );
+		self::assertContains( 'cs_mine_2', $session_ids );
+		self::assertNotContains( 'cs_other', $session_ids );
+		foreach ( $rows as $row ) {
+			self::assertSame( 9, $row['user_id'] );
+			self::assertArrayNotHasKey( 'expires_at', $row );
+		}
+	}
+
+	public function test_for_user_excludes_expired_entries(): void {
+		Pending_Checkouts::put(
+			'plug',
+			'cs_expired',
+			array( 'gateway' => 'stripe', 'user_id' => 3, 'credits' => 1, 'price_cents' => 1, 'currency' => 'USD' )
+		);
+
+		global $wbcom_credits_test_options;
+		$key = 'wbcom_credits_pc_plug_' . md5( 'cs_expired' );
+		$wbcom_credits_test_options[ $key ]['expires_at'] = time() - 1;
+
+		self::assertSame( array(), Pending_Checkouts::for_user( 'plug', 3 ) );
+	}
+
+	public function test_for_user_reads_legacy_shared_entries(): void {
+		update_option(
+			'wbcom_credits_pending_checkouts_plug',
+			array(
+				'cs_legacy' => array(
+					'gateway'     => 'stripe',
+					'user_id'     => 11,
+					'credits'     => 50,
+					'price_cents' => 500,
+					'currency'    => 'USD',
+					'expires_at'  => time() + 3600,
+				),
+			)
+		);
+
+		$rows = Pending_Checkouts::for_user( 'plug', 11 );
+
+		self::assertCount( 1, $rows );
+		self::assertSame( 'cs_legacy', $rows[0]['session_id'] );
+		self::assertSame( 50, $rows[0]['credits'] );
+	}
 }

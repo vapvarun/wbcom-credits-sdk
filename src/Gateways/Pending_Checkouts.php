@@ -103,6 +103,11 @@ final class Pending_Checkouts {
 		update_option(
 			$key,
 			array(
+				// Stored alongside the other fields (not just implied by the option
+				// key) because the key is session_id run through a one-way md5 -
+				// for_user() enumerates entries via the sweep index and has no other
+				// way to recover which session an entry belongs to.
+				'session_id'  => $session_id,
 				'gateway'     => sanitize_key( (string) ( $payload['gateway'] ?? '' ) ),
 				'user_id'     => (int) ( $payload['user_id'] ?? 0 ),
 				'credits'     => (int) ( $payload['credits'] ?? 0 ),
@@ -147,6 +152,92 @@ final class Pending_Checkouts {
 		// Strip storage-only fields before returning.
 		unset( $entry['expires_at'] );
 		return $entry;
+	}
+
+	/**
+	 * All non-expired pending checkouts for one buyer, newest first.
+	 *
+	 * Lets a consumer show "awaiting payment" in its own wallet UI for a
+	 * direct-gateway checkout that has not been credited yet (the webhook has
+	 * not arrived, or the buyer has not returned to claim it) - the same
+	 * visibility {@see Transaction_Log} already gives completed purchases.
+	 *
+	 * Ordering is by expiry, newest first: every put() without a custom TTL
+	 * (the common case) computes expires_at from the same fixed default, so a
+	 * later checkout always expires later. There is no created_at field to
+	 * sort by instead, and adding one for this alone is not worth a storage
+	 * shape change.
+	 *
+	 * @since 1.8.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @return array<int, array{session_id:string,gateway:string,user_id:int,credits:int,price_cents:int,currency:string}>
+	 */
+	public static function for_user( string $slug, int $user_id ): array {
+		$now  = time();
+		$rows = array();
+
+		// The index lists every live entry's key; it is the enumeration
+		// source, not the expiry source of truth — an entry's own
+		// expires_at (same field get() checks) decides staleness, since
+		// the two can disagree (e.g. a test, or a future caller, pokes the
+		// entry directly).
+		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
+		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
+			$entry = get_option( (string) $key, null );
+			if ( ! is_array( $entry ) || (int) ( $entry['user_id'] ?? 0 ) !== $user_id ) {
+				continue;
+			}
+			$expires_at = (int) ( $entry['expires_at'] ?? 0 );
+			if ( $expires_at < $now ) {
+				continue;
+			}
+			$rows[] = self::for_user_row( $entry, $expires_at );
+		}
+
+		// Pre-1.7.2 entries live in one shared option, keyed by session_id.
+		$legacy = get_option( self::legacy_key( $slug ), array() );
+		foreach ( ( is_array( $legacy ) ? $legacy : array() ) as $session_id => $entry ) {
+			if ( ! is_array( $entry ) || (int) ( $entry['user_id'] ?? 0 ) !== $user_id ) {
+				continue;
+			}
+			$expires_at = (int) ( $entry['expires_at'] ?? 0 );
+			if ( $expires_at < $now ) {
+				continue;
+			}
+			$entry['session_id'] = (string) $session_id;
+			$rows[]              = self::for_user_row( $entry, $expires_at );
+		}
+
+		usort( $rows, static fn( array $a, array $b ): int => $b['_sort'] <=> $a['_sort'] );
+
+		return array_map(
+			static function ( array $row ): array {
+				unset( $row['_sort'] );
+				return $row;
+			},
+			$rows
+		);
+	}
+
+	/**
+	 * Normalize one stored entry into the shape for_user() returns.
+	 *
+	 * @param array<string, mixed> $entry      Stored entry (already known to match the requested user).
+	 * @param int                  $expires_at Entry expiry, used only for sort order.
+	 * @return array{session_id:string,gateway:string,user_id:int,credits:int,price_cents:int,currency:string,_sort:int}
+	 */
+	private static function for_user_row( array $entry, int $expires_at ): array {
+		return array(
+			'session_id'  => (string) ( $entry['session_id'] ?? '' ),
+			'gateway'     => (string) ( $entry['gateway'] ?? '' ),
+			'user_id'     => (int) ( $entry['user_id'] ?? 0 ),
+			'credits'     => (int) ( $entry['credits'] ?? 0 ),
+			'price_cents' => (int) ( $entry['price_cents'] ?? 0 ),
+			'currency'    => (string) ( $entry['currency'] ?? 'USD' ),
+			'_sort'       => $expires_at,
+		);
 	}
 
 	/**
