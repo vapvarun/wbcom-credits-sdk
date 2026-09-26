@@ -138,6 +138,12 @@ if ( ! function_exists( '_x' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html__' ) ) {
+	function esc_html__( string $s, ?string $domain = null ): string {
+		return htmlspecialchars( $s, ENT_QUOTES );
+	}
+}
+
 if ( ! function_exists( 'esc_html' ) ) {
 	function esc_html( $s ): string {
 		return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' );
@@ -490,6 +496,25 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
 	function wp_remote_retrieve_body( $response ): string {
 		return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
+	}
+}
+
+// Transient stubs (PayPal caches its OAuth token). In-memory per request.
+global $wbcom_credits_test_transients;
+$wbcom_credits_test_transients = array();
+
+if ( ! function_exists( 'get_transient' ) ) {
+	function get_transient( string $key ) {
+		global $wbcom_credits_test_transients;
+		return $wbcom_credits_test_transients[ $key ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'set_transient' ) ) {
+	function set_transient( string $key, $value, int $ttl = 0 ): bool {
+		global $wbcom_credits_test_transients;
+		$wbcom_credits_test_transients[ $key ] = $value;
+		return true;
 	}
 }
 

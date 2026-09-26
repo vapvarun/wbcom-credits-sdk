@@ -79,6 +79,20 @@ final class Idempotency {
 	 * @param string $gateway Gateway id.
 	 * @return void
 	 */
+	/**
+	 * Release a claim taken by mark_processed() after the work failed.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $slug     Plugin slug.
+	 * @param string $gateway  Gateway id.
+	 * @param string $event_id Event id.
+	 * @return void
+	 */
+	public static function release( string $slug, string $gateway, string $event_id ): void {
+		Processed_Events::release( $slug, $gateway, $event_id );
+	}
+
 	public static function reset_for_tests( string $slug, string $gateway ): void {
 		Processed_Events::reset_for_tests( $slug, $gateway );
 	}

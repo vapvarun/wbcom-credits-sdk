@@ -60,10 +60,27 @@ abstract class Abstract_Gateway implements GatewayInterface {
 
 		switch ( $event->type ) {
 			case Gateway_Event::TYPE_CHECKOUT_COMPLETED:
-				return $this->process_checkout_completed( $slug, $event );
+				$response = $this->process_checkout_completed( $slug, $event );
+				break;
 
 			case Gateway_Event::TYPE_REFUND:
-				return $this->process_refund( $slug, $event );
+				$response = $this->process_refund( $slug, $event );
+				break;
+
+			default:
+				$response = null;
+		}
+
+		if ( null !== $response ) {
+			// The claim above is taken before crediting so duplicates cannot
+			// double-credit. If crediting then FAILED (unknown or mismatched
+			// session, top-up error), keeping the claim turned every provider
+			// retry into a "duplicate" and the paid session was never credited.
+			// Give the claim back so the retry can succeed.
+			if ( $response->get_status() >= 400 && '' !== $event->event_id ) {
+				Idempotency::release( $slug, $this->get_id(), $event->event_id );
+			}
+			return $response;
 		}
 
 		return new \WP_REST_Response( array( 'received' => true, 'unhandled' => $event->type ), 200 );
@@ -117,6 +134,9 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			? Credits::topup_money( $slug, (int) $expected['user_id'], $credits_purchased, '', $topup_note )
 			: Credits::topup( $slug, (int) $expected['user_id'], $credits_purchased, $topup_note );
 		if ( false === $ledger_id ) {
+			// Nothing was credited: release the session claim so the webhook
+			// retry or the buyer's return can credit it.
+			Idempotency::release( $slug, $this->get_id(), 'session:' . $event->session_id );
 			return new \WP_REST_Response( array( 'error' => 'topup_failed' ), 500 );
 		}
 
@@ -191,6 +211,15 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		$refunded_so_far = (int) $parent['refunded_cents'];
 		$refund_amount = $event->amount_cents > 0 ? $event->amount_cents : $orig_amount;
 
+		// Stripe's charge.refunded carries the charge's CUMULATIVE
+		// amount_refunded, not this refund's amount: two $3 refunds on a $10
+		// charge arrive as 300 then 600, and treating 600 as a new refund
+		// revoked $9 worth of credits instead of $6. Take the part not yet
+		// applied. PayPal sends each refund's own amount and leaves the flag off.
+		if ( $event->amount_is_cumulative && $event->amount_cents > 0 ) {
+			$refund_amount = $event->amount_cents - $refunded_so_far;
+		}
+
 		// Clamp so a misbehaving provider can't refund more than was captured.
 		$refund_amount = min( $refund_amount, $orig_amount - $refunded_so_far );
 		if ( $refund_amount <= 0 ) {
@@ -200,6 +229,22 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		$credits_to_revoke = $orig_amount > 0
 			? (int) floor( $orig_credits * $refund_amount / $orig_amount )
 			: 0;
+
+		// A refund can only take back what the buyer has not already spent. The
+		// line above is the proportional share of the ORIGINAL purchase, computed
+		// from the payment alone - it has no idea whether some (or all) of it was
+		// already deducted by the consumer. Cap it to the current balance so a
+		// refund can never drive it negative. The site owner is expected to only
+		// refund the buyer's unspent balance at the provider; this cap is the
+		// SDK-side safety net, not the primary enforcement - it should not fire
+		// in the normal case.
+		if ( $credits_to_revoke > 0 ) {
+			$is_money = Credits::is_money( $slug );
+			$unspent  = $is_money
+				? (int) floor( Credits::balance_money( $slug, (int) $parent['user_id'] ) )
+				: Credits::get_balance( $slug, (int) $parent['user_id'] );
+			$credits_to_revoke = max( 0, min( $credits_to_revoke, $unspent ) );
+		}
 
 		$ledger_id = 0;
 		if ( $credits_to_revoke > 0 ) {
@@ -269,7 +314,14 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			 * @param array<string, mixed> $context Linkage context: gateway, session_id,
 			 *                                       provider_ref, ledger_id, reason, item_id.
 			 */
-			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $credits_to_revoke, $context );
+			// Arg 3 is in LEDGER units, as Credits::refund() sends it: minor
+			// units for a money consumer. $credits_to_revoke is a credit count
+			// (major), so a money consumer's bridge read a 100-credit refund as
+			// 1 credit.
+			$event_amount = Credits::is_money( $slug )
+				? \Wbcom\Credits\Money::to_minor( $credits_to_revoke, Credits::resolve_money_currency( $slug ) )
+				: $credits_to_revoke;
+			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $event_amount, $context );
 		}
 
 		/**

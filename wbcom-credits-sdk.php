@@ -10,80 +10,179 @@
  * `wbcom_credits_sdk_registry` hook.
  *
  * @package Wbcom\Credits
- * @version 1.6.0
+ * @version 1.8.0
  * @license GPL-2.0+
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /*
- * ─── Class loader ────────────────────────────────────────────────────────
+ * ─── One copy wins, and only that copy loads ─────────────────────────────
  *
- * Multiple plugins on the same site can each bundle their own copy of the
- * SDK. They run in load-order and any of them may reach this file first.
+ * Several plugins on the same site each bundle their own copy of this SDK,
+ * and PHP has exactly one `\Wbcom\Credits\Credits` per request. So the
+ * question is never "can they coexist" — it is "which copy gets to be the
+ * one", and the answer has to be the NEWEST, not the luckiest.
  *
- * The previous design used one boolean flag (WBCOM_CREDITS_SDK_AUTOLOADER_LOADED):
- * the first bootstrap to run set the flag and required its full class set;
- * every later bootstrap skipped entirely. That worked when every bundled
- * copy was identical — but the moment two consumers shipped at different
- * SDK versions (which is the normal state of a submodule pinned per
- * plugin), the older copy could win the race and the newer consumer would
- * fatal on "Class X not found" for any class added after that older
- * version.
+ * Two earlier designs got that wrong, both by deciding at load time:
  *
- * The new loader walks a class → file map. For each entry it loads the
- * file only when the class isn't already in memory. Order in the map
- * places dependencies first (Versions, Registry, Ledger) so a partial
- * load can still resolve required parents on its way to leaf classes.
+ *   1. A boolean flag. The first bootstrap to run loaded its whole class
+ *      set and every later one skipped. Fine while every copy was
+ *      identical; the moment versions differed, an old copy could win and
+ *      a newer consumer fataled on "Class X not found".
+ *   2. Fill-in. Each bootstrap loaded only the classes not already in
+ *      memory. That fixed MISSING classes but not OLD ones: the first copy
+ *      still defined `Credits`, so a newer consumer calling a method added
+ *      after that version got "Call to undefined method" instead — a white
+ *      screen on every charge (support ticket 41719).
  *
- * Each bootstrap is now a fill-in: it loads what's missing and no-ops on
- * what's already there. Older + newer copies coexist; the newer copy
- * fills in classes the older one didn't ship.
+ * Both fought over load order. This one does not load anything at include
+ * time at all. Each copy only announces where it is and what version it is,
+ * which costs nothing and leaves the decision open. The first class anyone
+ * actually touches is resolved through a single autoloader that picks the
+ * highest version announced so far and serves EVERY class from that one
+ * directory. Plugin files all run before any hook fires, so by first use
+ * every copy on the site has announced itself.
+ *
+ * Stale bundles stop mattering: a plugin three versions behind announces,
+ * loses, and supplies nothing. Nobody has to keep every bundle in lockstep
+ * to avoid a fatal — lockstep becomes a hygiene goal, not a safety
+ * requirement.
+ *
+ * One honest limit: a copy from BEFORE this loader (1.6.0 and earlier)
+ * still requires its own files at include time. If one of those runs first
+ * it defines the classes and this autoloader is never consulted, so it
+ * wins on load order the old way. Consumers keep a readiness check for
+ * exactly that case — see CONSUMERS.md — and the exposure shrinks with
+ * every plugin that ships this loader.
  */
-$wbcom_credits_sdk_classes = array(
-	'\\Wbcom\\Credits\\Versions'                          => __DIR__ . '/src/Versions.php',
-	'\\Wbcom\\Credits\\Registry'                          => __DIR__ . '/src/Registry.php',
-	'\\Wbcom\\Credits\\Ledger'                            => __DIR__ . '/src/Ledger.php',
-	'\\Wbcom\\Credits\\Money'                             => __DIR__ . '/src/Money.php',
-	'\\Wbcom\\Credits\\Credits'                           => __DIR__ . '/src/Credits.php',
-	'\\Wbcom\\Credits\\Consumer'                          => __DIR__ . '/src/Consumer.php',
-	'\\Wbcom\\Credits\\REST'                              => __DIR__ . '/src/REST.php',
-	'\\Wbcom\\Credits\\Template'                          => __DIR__ . '/src/Template.php',
-	'\\Wbcom\\Credits\\Adapters\\AdapterInterface'        => __DIR__ . '/src/Adapters/AdapterInterface.php',
-	'\\Wbcom\\Credits\\Adapters\\AdapterRegistry'         => __DIR__ . '/src/Adapters/AdapterRegistry.php',
-	'\\Wbcom\\Credits\\Adapters\\WooCommerceAdapter'      => __DIR__ . '/src/Adapters/WooCommerce.php',
-	'\\Wbcom\\Credits\\Adapters\\WooSubscriptionsAdapter' => __DIR__ . '/src/Adapters/WooSubscriptions.php',
-	'\\Wbcom\\Credits\\Adapters\\WooMembershipsAdapter'   => __DIR__ . '/src/Adapters/WooMemberships.php',
-	'\\Wbcom\\Credits\\Adapters\\PMProAdapter'            => __DIR__ . '/src/Adapters/PMPro.php',
-	'\\Wbcom\\Credits\\Adapters\\MemberPressAdapter'      => __DIR__ . '/src/Adapters/MemberPress.php',
-	// Gateway interfaces + helpers (load order matters: interface, DTO, helpers, abstract, concretes).
-	'\\Wbcom\\Credits\\Gateways\\GatewayInterface'        => __DIR__ . '/src/Gateways/GatewayInterface.php',
-	'\\Wbcom\\Credits\\Gateways\\Gateway_Event'           => __DIR__ . '/src/Gateways/Gateway_Event.php',
-	'\\Wbcom\\Credits\\Gateways\\Processed_Events'        => __DIR__ . '/src/Gateways/Processed_Events.php',
-	'\\Wbcom\\Credits\\Gateways\\Idempotency'             => __DIR__ . '/src/Gateways/Idempotency.php',
-	'\\Wbcom\\Credits\\Gateways\\Pending_Checkouts'       => __DIR__ . '/src/Gateways/Pending_Checkouts.php',
-	'\\Wbcom\\Credits\\Gateways\\Signature_Verifier'      => __DIR__ . '/src/Gateways/Signature_Verifier.php',
-	'\\Wbcom\\Credits\\Gateways\\Transaction_Log'         => __DIR__ . '/src/Gateways/Transaction_Log.php',
-	'\\Wbcom\\Credits\\Gateways\\Abstract_Gateway'        => __DIR__ . '/src/Gateways/Abstract_Gateway.php',
-	'\\Wbcom\\Credits\\Gateways\\Stripe'                  => __DIR__ . '/src/Gateways/Stripe.php',
-	'\\Wbcom\\Credits\\Gateways\\PayPal'                  => __DIR__ . '/src/Gateways/PayPal.php',
-	'\\Wbcom\\Credits\\Gateways\\Gateway_Registry'        => __DIR__ . '/src/Gateways/Gateway_Registry.php',
-	'\\Wbcom\\Credits\\Gateways\\Webhook_Controller'      => __DIR__ . '/src/Gateways/Webhook_Controller.php',
-	'\\Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => __DIR__ . '/src/Gateways/Admin_Form_Renderer.php',
-	'\\Wbcom\\Credits\\Gateways\\Pricing'                 => __DIR__ . '/src/Gateways/Pricing.php',
-	'\\Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => __DIR__ . '/src/Gateways/Pack_Admin_Renderer.php',
-);
 
-foreach ( $wbcom_credits_sdk_classes as $wbcom_credits_sdk_class => $wbcom_credits_sdk_file ) {
-	if ( class_exists( $wbcom_credits_sdk_class ) || interface_exists( $wbcom_credits_sdk_class ) ) {
-		continue;
-	}
-	if ( file_exists( $wbcom_credits_sdk_file ) ) {
-		require_once $wbcom_credits_sdk_file;
-	}
+// Announce this copy. No file is read and no class is defined here, so a
+// higher version included later in the request can still win.
+if ( ! isset( $GLOBALS['wbcom_credits_sdk_copies'] ) ) {
+	$GLOBALS['wbcom_credits_sdk_copies'] = array();
 }
+$GLOBALS['wbcom_credits_sdk_copies'][ __DIR__ ] = '1.8.0';
 
-unset( $wbcom_credits_sdk_classes, $wbcom_credits_sdk_class, $wbcom_credits_sdk_file );
+if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
+
+	/**
+	 * Class → file, relative to whichever copy wins.
+	 *
+	 * An explicit map rather than PSR-4 because several class names do not
+	 * match their file names (WooCommerceAdapter lives in WooCommerce.php).
+	 *
+	 * @since 1.7.0
+	 *
+	 * @return array<string, string>
+	 */
+	function wbcom_credits_sdk_class_map(): array {
+		return array(
+			'Wbcom\\Credits\\Versions'                          => '/src/Versions.php',
+			'Wbcom\\Credits\\Registry'                          => '/src/Registry.php',
+			'Wbcom\\Credits\\Ledger'                            => '/src/Ledger.php',
+			'Wbcom\\Credits\\Money'                             => '/src/Money.php',
+			'Wbcom\\Credits\\Credits'                           => '/src/Credits.php',
+			'Wbcom\\Credits\\Consumer'                          => '/src/Consumer.php',
+			'Wbcom\\Credits\\REST'                              => '/src/REST.php',
+			'Wbcom\\Credits\\Template'                          => '/src/Template.php',
+			'Wbcom\\Credits\\Adapters\\AdapterInterface'        => '/src/Adapters/AdapterInterface.php',
+			'Wbcom\\Credits\\Adapters\\AdapterRegistry'         => '/src/Adapters/AdapterRegistry.php',
+			'Wbcom\\Credits\\Adapters\\WooCommerceAdapter'      => '/src/Adapters/WooCommerce.php',
+			'Wbcom\\Credits\\Adapters\\WooSubscriptionsAdapter' => '/src/Adapters/WooSubscriptions.php',
+			'Wbcom\\Credits\\Adapters\\WooMembershipsAdapter'   => '/src/Adapters/WooMemberships.php',
+			'Wbcom\\Credits\\Adapters\\PMProAdapter'            => '/src/Adapters/PMPro.php',
+			'Wbcom\\Credits\\Adapters\\MemberPressAdapter'      => '/src/Adapters/MemberPress.php',
+			'Wbcom\\Credits\\Gateways\\GatewayInterface'        => '/src/Gateways/GatewayInterface.php',
+			'Wbcom\\Credits\\Gateways\\Gateway_Event'           => '/src/Gateways/Gateway_Event.php',
+			'Wbcom\\Credits\\Gateways\\Processed_Events'        => '/src/Gateways/Processed_Events.php',
+			'Wbcom\\Credits\\Gateways\\Idempotency'             => '/src/Gateways/Idempotency.php',
+			'Wbcom\\Credits\\Gateways\\Pending_Checkouts'       => '/src/Gateways/Pending_Checkouts.php',
+			'Wbcom\\Credits\\Gateways\\Signature_Verifier'      => '/src/Gateways/Signature_Verifier.php',
+			'Wbcom\\Credits\\Gateways\\Transaction_Log'         => '/src/Gateways/Transaction_Log.php',
+			'Wbcom\\Credits\\Gateways\\Abstract_Gateway'        => '/src/Gateways/Abstract_Gateway.php',
+			'Wbcom\\Credits\\Gateways\\Stripe'                  => '/src/Gateways/Stripe.php',
+			'Wbcom\\Credits\\Gateways\\PayPal'                  => '/src/Gateways/PayPal.php',
+			'Wbcom\\Credits\\Gateways\\Gateway_Registry'        => '/src/Gateways/Gateway_Registry.php',
+			'Wbcom\\Credits\\Gateways\\Webhook_Controller'      => '/src/Gateways/Webhook_Controller.php',
+			'Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => '/src/Gateways/Admin_Form_Renderer.php',
+			'Wbcom\\Credits\\Gateways\\Pricing'                 => '/src/Gateways/Pricing.php',
+			'Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => '/src/Gateways/Pack_Admin_Renderer.php',
+		);
+	}
+
+	/**
+	 * Directory of the highest-versioned copy announced on this request.
+	 *
+	 * Resolved once, on the first class anyone asks for, and reused for
+	 * every class after it — mixing two copies is the bug this loader
+	 * exists to prevent, so the winner is picked once and never revisited.
+	 *
+	 * @since 1.7.0
+	 *
+	 * @return string Absolute directory path, or '' when nothing announced.
+	 */
+	function wbcom_credits_sdk_dir(): string {
+		static $winner = null;
+
+		if ( null !== $winner ) {
+			return $winner;
+		}
+
+		$winner  = '';
+		$highest = '';
+
+		foreach ( (array) ( $GLOBALS['wbcom_credits_sdk_copies'] ?? array() ) as $dir => $version ) {
+			// Ties keep the copy that announced first; there is nothing to
+			// choose between two copies of the same version.
+			if ( '' === $highest || version_compare( (string) $version, $highest, '>' ) ) {
+				$highest = (string) $version;
+				$winner  = (string) $dir;
+			}
+		}
+
+		if ( '' !== $winner && ! defined( 'WBCOM_CREDITS_SDK_LOADED_FROM' ) ) {
+			define( 'WBCOM_CREDITS_SDK_LOADED_FROM', $winner );
+			define( 'WBCOM_CREDITS_SDK_LOADED_VERSION', $highest );
+		}
+
+		return $winner;
+	}
+
+	/**
+	 * Load an SDK class from the winning copy.
+	 *
+	 * @since 1.7.0
+	 *
+	 * @param string $class Fully-qualified class name.
+	 * @return void
+	 */
+	function wbcom_credits_sdk_autoload( string $class ): void {
+		if ( 0 !== strpos( $class, 'Wbcom\\Credits\\' ) ) {
+			return;
+		}
+
+		$map = wbcom_credits_sdk_class_map();
+
+		if ( ! isset( $map[ $class ] ) ) {
+			return;
+		}
+
+		$dir = wbcom_credits_sdk_dir();
+
+		if ( '' === $dir ) {
+			return;
+		}
+
+		$file = $dir . $map[ $class ];
+
+		if ( file_exists( $file ) ) {
+			require_once $file;
+		}
+	}
+
+	spl_autoload_register( 'wbcom_credits_sdk_autoload' );
+}
 
 /*
  * Backward-compatible flag.
@@ -108,10 +207,10 @@ if ( ! defined( 'WBCOM_CREDITS_SDK_AUTOLOADER_LOADED' ) ) {
  * The function-name guard makes this file idempotent — re-including it
  * after the first run is a clean no-op.
  */
-if ( ! function_exists( 'wbcom_credits_sdk_register_1_6_0' ) && function_exists( 'add_action' ) ) {
+if ( ! function_exists( 'wbcom_credits_sdk_register_1_8_0' ) && function_exists( 'add_action' ) ) {
 
 	add_action( 'after_setup_theme', array( '\\Wbcom\\Credits\\Versions', 'initialize_latest_version' ), 1, 0 );
-	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_6_0', 0, 0 );
+	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_8_0', 0, 0 );
 
 	/**
 	 * Register this version with Versions::instance().
@@ -119,8 +218,8 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_6_0' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_register_1_6_0(): void {
-		\Wbcom\Credits\Versions::instance()->register( '1.6.0', 'wbcom_credits_sdk_initialize_1_6_0' );
+	function wbcom_credits_sdk_register_1_8_0(): void {
+		\Wbcom\Credits\Versions::instance()->register( '1.8.0', 'wbcom_credits_sdk_initialize_1_8_0' );
 	}
 
 	/**
@@ -129,9 +228,9 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_6_0' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_initialize_1_6_0(): void {
+	function wbcom_credits_sdk_initialize_1_8_0(): void {
 		if ( ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-			define( 'WBCOM_CREDITS_SDK_VERSION', '1.6.0' );
+			define( 'WBCOM_CREDITS_SDK_VERSION', '1.8.0' );
 		}
 		if ( ! defined( 'WBCOM_CREDITS_SDK_PATH' ) ) {
 			define( 'WBCOM_CREDITS_SDK_PATH', __DIR__ );
@@ -148,7 +247,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_6_0' ) && function_exists(
 	// got here, run registration + initialization synchronously so the SDK
 	// is usable on this same request.
 	if ( did_action( 'after_setup_theme' ) && ! doing_action( 'after_setup_theme' ) && ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-		wbcom_credits_sdk_register_1_6_0();
+		wbcom_credits_sdk_register_1_8_0();
 		\Wbcom\Credits\Versions::initialize_latest_version();
 	}
 }

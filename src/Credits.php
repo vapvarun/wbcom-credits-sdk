@@ -81,6 +81,19 @@ final class Credits {
 	}
 
 	/**
+	 * How many ledger rows a user has, to page get_ledger().
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @return int
+	 */
+	public static function count_ledger( string $slug, int $user_id ): int {
+		return Ledger::count_for_user( self::get_prefix( $slug ), $user_id );
+	}
+
+	/**
 	 * Check if credits are enabled for a plugin.
 	 *
 	 * @since 1.0.0
@@ -103,6 +116,36 @@ final class Credits {
 		 * @param string $slug    Plugin slug.
 		 */
 		return (bool) apply_filters( 'wbcom_credits_enabled', true, $slug );
+	}
+
+	/**
+	 * Whether members may BUY credits right now.
+	 *
+	 * The one answer every purchase path asks: the gateway checkout route, and
+	 * the WooCommerce / MemberPress / PMPro adapters, which stop mapped
+	 * products from being bought. Separate from is_enabled() because balances
+	 * stay readable, and payments already made are still credited, while
+	 * selling is off.
+	 *
+	 * @since 1.7.2
+	 *
+	 * @param string $slug Plugin slug.
+	 * @return bool
+	 */
+	public static function checkout_enabled( string $slug ): bool {
+		/**
+		 * Filter whether members may start a credit purchase.
+		 *
+		 * Consumers hook this to their own switch (Listora Pro's Monetization
+		 * toggle). Only STARTING a purchase is gated: completing or claiming a
+		 * payment already made, and refunds, always run.
+		 *
+		 * @since 1.7.2
+		 *
+		 * @param bool   $enabled Default: Credits::is_enabled( $slug ).
+		 * @param string $slug    Consumer slug.
+		 */
+		return (bool) apply_filters( 'wbcom_credits_checkout_enabled', self::is_enabled( $slug ), $slug );
 	}
 
 	// -------------------------------------------------------------------------
@@ -505,7 +548,9 @@ final class Credits {
 	 * @return bool
 	 */
 	public static function can_purchase( string $slug ): bool {
-		return in_array( true, self::purchase_paths( $slug ), true );
+		// A route that is switched off is not a way to buy (1.7.2). The paths
+		// themselves stay listed: they tell an owner what is configured.
+		return self::checkout_enabled( $slug ) && in_array( true, self::purchase_paths( $slug ), true );
 	}
 
 	// -------------------------------------------------------------------------
@@ -680,13 +725,19 @@ final class Credits {
 	/**
 	 * Invalidate per-request balance cache.
 	 *
+	 * Public since 1.7.2 for consumers that serialise spends with their own
+	 * lock: a balance read earlier in the request (a pre-check) is cached, so
+	 * after taking the lock the next read must come from the ledger or two
+	 * requests both pass the check (found on WB Listora, card 10336800031).
+	 *
 	 * @since 1.0.0
+	 * @since 1.7.2 Public.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
 	 * @return void
 	 */
-	private static function invalidate_cache( string $slug, int $user_id ): void {
+	public static function invalidate_cache( string $slug, int $user_id ): void {
 		unset( self::$balance_cache[ $slug ][ $user_id ] );
 	}
 

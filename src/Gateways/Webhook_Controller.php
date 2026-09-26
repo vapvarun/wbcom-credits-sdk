@@ -132,6 +132,11 @@ final class Webhook_Controller {
 	// -------------------------------------------------------------------------
 
 	public function create_checkout( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		// Documented on Credits::checkout_enabled(), the one gate every purchase path asks.
+		if ( ! Credits::checkout_enabled( $this->slug ) ) {
+			return new \WP_Error( 'checkout_disabled', __( 'Credit purchases are not available on this site right now.', 'wbcom-credits-sdk' ), array( 'status' => 403 ) );
+		}
+
 		$gateway = $this->resolve_gateway( (string) $request->get_param( 'gateway' ) );
 		if ( ! $gateway instanceof GatewayInterface ) {
 			return new \WP_Error( 'unknown_gateway', 'Gateway not registered.', array( 'status' => 404 ) );

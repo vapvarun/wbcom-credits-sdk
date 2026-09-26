@@ -106,6 +106,12 @@ final class Consumer {
 			return;
 		}
 
+		// Held or settled already: a second hold event (a resubmission, a
+		// retried request) must not reserve again.
+		if ( in_array( $this->state( $item_id )['state'], array( 'held', 'settled' ), true ) ) {
+			return;
+		}
+
 		$user_id = (int) $post->post_author;
 		$cost    = $this->resolve_cost( $item_id );
 
@@ -118,7 +124,47 @@ final class Consumer {
 			return;
 		}
 
-		$this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' );
+		if ( $this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' ) ) {
+			$this->set_state( $item_id, 'held', $cost );
+		}
+	}
+
+	/**
+	 * This consumer's record for an item: state and the amount it holds.
+	 *
+	 * States: '' (nothing recorded - items from before 1.7.2 behave as
+	 * they always did), 'held', 'settled', 'released'.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return array{state: string, cost: int}
+	 */
+	private function state( int $item_id ): array {
+		$raw = get_post_meta( $item_id, $this->state_key(), true );
+		return array(
+			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
+			'cost'  => is_array( $raw ) ? (int) ( $raw['cost'] ?? 0 ) : 0,
+		);
+	}
+
+	/**
+	 * Record an item's state.
+	 *
+	 * @param int    $item_id Post/item ID.
+	 * @param string $state   held | settled | released.
+	 * @param int    $cost    Amount held, in resolve_cost() units.
+	 * @return void
+	 */
+	private function set_state( int $item_id, string $state, int $cost ): void {
+		update_post_meta( $item_id, $this->state_key(), array( 'state' => $state, 'cost' => $cost ) );
+	}
+
+	/**
+	 * Post meta key for this consumer's record.
+	 *
+	 * @return string
+	 */
+	private function state_key(): string {
+		return '_wbcom_credits_' . sanitize_key( $this->slug ) . '_' . sanitize_key( (string) $this->config['id'] );
 	}
 
 	/**
@@ -136,7 +182,20 @@ final class Consumer {
 		}
 
 		$user_id = (int) $post->post_author;
-		$cost    = $this->resolve_cost( $item_id );
+		$record  = $this->state( $item_id );
+
+		// Recorded items settle only an open hold, for the amount held. A
+		// republish of a settled item (renewal, reactivation) or an item
+		// whose hold was never placed charges nothing more.
+		if ( '' !== $record['state'] ) {
+			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
+				$this->settle( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits deducted' );
+				$this->set_state( $item_id, 'settled', $record['cost'] );
+			}
+			return;
+		}
+
+		$cost = $this->resolve_cost( $item_id );
 
 		if ( $cost <= 0 ) {
 			return;
@@ -160,7 +219,21 @@ final class Consumer {
 		}
 
 		$user_id = (int) $post->post_author;
-		$cost    = $this->resolve_cost( $item_id );
+		$record  = $this->state( $item_id );
+
+		// Recorded items release only an open hold. Deactivating or trashing
+		// an item whose credits were already settled used to refund them,
+		// so a member could take a paid listing down, get paid back and put
+		// it up again for free.
+		if ( '' !== $record['state'] ) {
+			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
+				$this->release( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits refunded' );
+				$this->set_state( $item_id, 'released', $record['cost'] );
+			}
+			return;
+		}
+
+		$cost = $this->resolve_cost( $item_id );
 
 		if ( $cost <= 0 ) {
 			return;
@@ -199,14 +272,13 @@ final class Consumer {
 	 * @param int    $cost    Cost in the unit resolve_cost() returns (major credits).
 	 * @param int    $item_id Item ID.
 	 * @param string $note    Ledger note.
-	 * @return void
+	 * @return bool Whether the hold was written.
 	 */
-	private function reserve( int $user_id, int $cost, int $item_id, string $note ): void {
+	private function reserve( int $user_id, int $cost, int $item_id, string $note ): bool {
 		if ( Credits::is_money( $this->slug ) ) {
-			Credits::hold_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
-			return;
+			return false !== Credits::hold_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
 		}
-		Credits::hold( $this->slug, $user_id, $cost, $item_id, $note );
+		return false !== Credits::hold( $this->slug, $user_id, $cost, $item_id, $note );
 	}
 
 	/**

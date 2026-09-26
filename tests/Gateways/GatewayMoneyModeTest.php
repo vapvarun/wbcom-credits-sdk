@@ -131,4 +131,35 @@ final class GatewayMoneyModeTest extends TestCase {
 
 		self::assertSame( 0, Credits::get_balance( self::SLUG, self::USER_ID ), 'A full refund must return the balance to zero, not leave 99% behind.' );
 	}
+
+	/**
+	 * Refund policy (1.8.0), money-mode variant: a full refund on a purchase
+	 * the buyer already spent most of caps at the remaining minor-unit
+	 * balance rather than going negative.
+	 */
+	public function test_full_refund_after_spend_caps_at_balance_on_money_consumer(): void {
+		$this->deliver_checkout_webhook();
+
+		// Buyer already spent $70.00 (7000 minor units) of the $100.00 balance.
+		Credits::adjust( self::SLUG, self::USER_ID, -7000, 'spent' );
+		self::assertSame( 3000, Credits::get_balance( self::SLUG, self::USER_ID ) );
+
+		( new Stripe() )->handle_webhook(
+			self::SLUG,
+			array(
+				'id'   => 'evt_money_refund_capped',
+				'type' => 'charge.refunded',
+				'data' => array(
+					'object' => array(
+						'payment_intent'  => 'pi_money_1',
+						'amount_refunded' => self::AMOUNT_CENTS,
+						'currency'        => strtolower( self::CURRENCY ),
+						'metadata'        => array( 'wbcom_session' => self::SESSION_ID ),
+					),
+				),
+			)
+		);
+
+		self::assertSame( 0, Credits::get_balance( self::SLUG, self::USER_ID ), 'Balance must land at exactly zero, never negative.' );
+	}
 }

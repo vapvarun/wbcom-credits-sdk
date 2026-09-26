@@ -176,4 +176,54 @@ final class GatewayRefundEventTest extends TestCase {
 		self::assertSame( 'gateway_refund', $fired[0][3]['reason'] );
 		self::assertSame( 60, Credits::get_balance( self::SLUG, 7 ), 'Balance must reflect the prorated revoke (100 - 40).' );
 	}
+
+	/**
+	 * Refund policy (1.8.0): a refund only ever takes back the UNSPENT
+	 * balance, capped so it can never go negative — a full refund on a
+	 * purchase the buyer already spent most of must not debit past zero.
+	 */
+	public function test_full_refund_after_spend_caps_at_remaining_balance(): void {
+		// Buyer already spent 70 of the 100 credits before the refund arrives.
+		Credits::adjust( self::SLUG, 7, -70, 'spent' );
+		self::assertSame( 30, Credits::get_balance( self::SLUG, 7 ) );
+
+		$fired = array();
+		add_action(
+			'wbcom_credits_refunded',
+			static function ( $slug, $user_id, $amount, $context = array() ) use ( &$fired ): void {
+				$fired[] = array( $slug, $user_id, $amount, $context );
+			},
+			10,
+			4
+		);
+
+		// A full $10.00 refund would otherwise revoke all 100 purchased
+		// credits — only 30 are left, so only 30 may be taken back.
+		$gateway  = new Test_Gateway();
+		$response = $gateway->handle_webhook( self::SLUG, $this->refund_payload( 'evt_refund_capped', 1000 ) );
+
+		self::assertSame( 30, $response->get_data()['credits_revoked'], 'Capped at the unspent balance, not the full purchase.' );
+		self::assertSame( 30, $fired[0][2], 'The refund hook must report the amount ACTUALLY taken back, not the requested amount.' );
+		self::assertSame( 0, Credits::get_balance( self::SLUG, 7 ), 'Balance must land at exactly zero, never negative.' );
+	}
+
+	/**
+	 * A repeated webhook for an already-processed refund must change nothing
+	 * — no second ledger write, no second hook fire, balance untouched.
+	 */
+	public function test_repeated_webhook_after_cap_changes_nothing(): void {
+		Credits::adjust( self::SLUG, 7, -70, 'spent' );
+
+		$count = 0;
+		add_action( 'wbcom_credits_refunded', static function () use ( &$count ): void { ++$count; }, 10, 4 );
+
+		$gateway = new Test_Gateway();
+		$first   = $gateway->handle_webhook( self::SLUG, $this->refund_payload( 'evt_refund_capped_repeat', 1000 ) );
+		$second  = $gateway->handle_webhook( self::SLUG, $this->refund_payload( 'evt_refund_capped_repeat', 1000 ) );
+
+		self::assertSame( 30, $first->get_data()['credits_revoked'] );
+		self::assertTrue( ! empty( $second->get_data()['duplicate'] ), 'Replayed refund must be acked as a duplicate.' );
+		self::assertSame( 1, $count, 'Refund hook must fire exactly once across the replay.' );
+		self::assertSame( 0, Credits::get_balance( self::SLUG, 7 ), 'Balance must stay at zero, not drop further.' );
+	}
 }
