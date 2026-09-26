@@ -15,26 +15,40 @@ win on load order and hand a newer consumer a class without the methods it
 calls. That is what consumers' readiness checks are for (Guard column), and
 why bundles should still be kept current rather than left to the election.
 
-Last audited: 2026-09-15, against canonical `master` (1.7.0).
+Last audited: 2026-09-15, against canonical `master` (1.7.0). 1.7.1 and 1.7.2
+were never tagged or bundled on their own — every fix from both is folded
+into 1.8.0, the first tag since 1.7.0.
 
 ## Consumers
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.7.0 | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.7.0 → 1.8.0* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.7.0 | none — legacy API only |
 | WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | `plugins_loaded` (10) | 1.7.0 | none — legacy API only |
 
+\* Target once WB Ad Manager Pro re-bundles from this release; not yet
+re-vendored as of this SDK audit.
+
 Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
 
-**Before re-vendoring 1.7.2:** hook `wbcom_credits_checkout_enabled` to the
-plugin's own "credits are sold here" switch. From 1.7.2 it gates the gateway
-checkout route AND the WooCommerce / MemberPress / PMPro adapters' mapped
-products, so a plugin that leaves it unhooked keeps selling while its credits
-feature is off. WB Listora Pro hooks it to its Monetization toggle.
+**Everyone should move to 1.8.0 on their next release.** WB Listora, WP
+Career Board Pro and WPConnectPress are all still on pre-1.8.0 bundles (rows
+above); none of them carry the 1.7.2 refund/checkout-integrity fixes, the
+1.7.1 PayPal capture fix, or the 1.8.0 refund-cap safety net, and Career
+Board Pro / WPConnectPress predate the money-mode and purchase-paths API
+entirely. There is nothing to migrate — every 1.8.0 addition is additive —
+so this is a drop-in bundle swap, not a code change, unless a consumer wants
+to start using `for_user()`, `purchase_paths()`, or `cancel_hold_by_id()`.
+
+**Before re-vendoring 1.8.0:** hook `wbcom_credits_checkout_enabled` to the
+plugin's own "credits are sold here" switch. It gates the gateway checkout
+route AND the WooCommerce / MemberPress / PMPro adapters' mapped products,
+so a plugin that leaves it unhooked keeps selling while its credits feature
+is off. WB Listora Pro hooks it to its Monetization toggle.
 
 ## Rules
 

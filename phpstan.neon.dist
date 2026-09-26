@@ -25,7 +25,7 @@ parameters:
 
         # Constants defined in the bootstrap file are referenced from src/
         # — PHPStan can't track them across the require-once boundary.
-        - '#Constant WBCOM_CREDITS_SDK_PATH not found#'
+        - '#Constant WBCOM_CREDITS_SDK_(PATH|VERSION) not found#'
 
         # Reserved-for-extension properties — set at construction, read by
         # subclasses or future feature work. Not a real defect.
