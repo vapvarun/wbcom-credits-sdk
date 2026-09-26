@@ -361,13 +361,27 @@ final class WooCommerceAdapter implements AdapterInterface {
 			return;
 		}
 
-		$ledger_id = \Wbcom\Credits\Credits::adjust( $this->slug, $user_id, -$delta, $note );
-		if ( false === $ledger_id ) {
-			return;
+		// Refund policy (README): spent credits are consumed, so a refund
+		// takes back only what is still unspent and never goes negative.
+		$taken = max( 0, min( $delta, \Wbcom\Credits\Credits::get_balance( $this->slug, $user_id ) ) );
+
+		$ledger_id = 0;
+		if ( $taken > 0 ) {
+			$ledger_id = \Wbcom\Credits\Credits::adjust( $this->slug, $user_id, -$taken, $note );
+			if ( false === $ledger_id ) {
+				return;
+			}
 		}
 
-		$order->update_meta_data( $this->revoked_meta_key(), $revoked + $delta );
+		// The order's refund is settled up to $target even when the cap took
+		// less, so a later refund event never reaches credits bought since.
+		$order->update_meta_data( $this->revoked_meta_key(), $target );
 		$order->save();
+
+		if ( 0 === $taken ) {
+			return;
+		}
+		$delta = $taken; // The hook reports what was actually taken back.
 
 		/** This action is documented in src/Gateways/Abstract_Gateway.php */
 		do_action(

@@ -354,6 +354,35 @@ final class WooCommercePaymentGuardTest extends TestCase {
 	}
 
 	/**
+	 * Refund policy (1.8.0): spent credits are consumed. A refund takes back
+	 * only the unspent balance, never below zero, and the order counts as
+	 * settled so a later refund event cannot dip into credits bought since.
+	 */
+	public function test_refund_takes_back_only_the_unspent_balance(): void {
+		$order = $this->credited_order( 705 );
+		Credits::adjust( self::SLUG, self::USER, -35, 'spent' );
+		self::assertSame( 15, $this->balance() );
+
+		$order->refunded = 10.0;
+		$this->adapter()->on_order_refunded( 705, 9005 );
+		self::assertSame( 0, $this->balance(), 'Only the 15 unspent credits are taken back.' );
+
+		Credits::adjust( self::SLUG, self::USER, 20, 'a later top-up' );
+		$this->adapter()->on_order_refunded( 705, 9006 );
+		self::assertSame( 20, $this->balance(), 'A settled order never takes from credits bought later.' );
+	}
+
+	/** Cancelling a mostly spent order never drives the balance negative. */
+	public function test_cancel_never_goes_negative(): void {
+		$this->credited_order( 706 );
+		Credits::adjust( self::SLUG, self::USER, -45, 'spent' );
+
+		$this->adapter()->on_order_cancelled( 706 );
+
+		self::assertSame( 0, $this->balance() );
+	}
+
+	/**
 	 * A credited order that is cancelled gives its credits back once.
 	 */
 	public function test_cancelling_a_credited_order_revokes_its_credits(): void {
