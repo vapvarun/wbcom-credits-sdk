@@ -101,70 +101,7 @@ final class Consumer {
 	 * @return void
 	 */
 	public function on_hold( int $item_id ): void {
-		$post = get_post( $item_id );
-		if ( ! $post instanceof \WP_Post ) {
-			return;
-		}
-
-		// Held or settled already: a second hold event (a resubmission, a
-		// retried request) must not reserve again.
-		if ( in_array( $this->state( $item_id )['state'], array( 'held', 'settled' ), true ) ) {
-			return;
-		}
-
-		$user_id = (int) $post->post_author;
-		$cost    = $this->resolve_cost( $item_id );
-
-		if ( $cost <= 0 ) {
-			return;
-		}
-
-		$balance = $this->current_balance( $user_id );
-		if ( $balance < $cost ) {
-			return;
-		}
-
-		if ( $this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' ) ) {
-			$this->set_state( $item_id, 'held', $cost );
-		}
-	}
-
-	/**
-	 * This consumer's record for an item: state and the amount it holds.
-	 *
-	 * States: '' (nothing recorded - items from before 1.7.2 behave as
-	 * they always did), 'held', 'settled', 'released'.
-	 *
-	 * @param int $item_id Post/item ID.
-	 * @return array{state: string, cost: int}
-	 */
-	private function state( int $item_id ): array {
-		$raw = get_post_meta( $item_id, $this->state_key(), true );
-		return array(
-			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
-			'cost'  => is_array( $raw ) ? (int) ( $raw['cost'] ?? 0 ) : 0,
-		);
-	}
-
-	/**
-	 * Record an item's state.
-	 *
-	 * @param int    $item_id Post/item ID.
-	 * @param string $state   held | settled | released.
-	 * @param int    $cost    Amount held, in resolve_cost() units.
-	 * @return void
-	 */
-	private function set_state( int $item_id, string $state, int $cost ): void {
-		update_post_meta( $item_id, $this->state_key(), array( 'state' => $state, 'cost' => $cost ) );
-	}
-
-	/**
-	 * Post meta key for this consumer's record.
-	 *
-	 * @return string
-	 */
-	private function state_key(): string {
-		return '_wbcom_credits_' . sanitize_key( $this->slug ) . '_' . sanitize_key( (string) $this->config['id'] );
+		$this->reserve_item( $item_id );
 	}
 
 	/**
@@ -176,32 +113,7 @@ final class Consumer {
 	 * @return void
 	 */
 	public function on_deduct( int $item_id ): void {
-		$post = get_post( $item_id );
-		if ( ! $post instanceof \WP_Post ) {
-			return;
-		}
-
-		$user_id = (int) $post->post_author;
-		$record  = $this->state( $item_id );
-
-		// Recorded items settle only an open hold, for the amount held. A
-		// republish of a settled item (renewal, reactivation) or an item
-		// whose hold was never placed charges nothing more.
-		if ( '' !== $record['state'] ) {
-			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
-				$this->settle( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits deducted' );
-				$this->set_state( $item_id, 'settled', $record['cost'] );
-			}
-			return;
-		}
-
-		$cost = $this->resolve_cost( $item_id );
-
-		if ( $cost <= 0 ) {
-			return;
-		}
-
-		$this->settle( $user_id, $cost, $item_id, $this->config['label'] . ' — credits deducted' );
+		$this->settle_item( $item_id );
 	}
 
 	/**
@@ -213,13 +125,110 @@ final class Consumer {
 	 * @return void
 	 */
 	public function on_refund( int $item_id ): void {
+		$this->release_item( $item_id );
+	}
+
+	/**
+	 * Reserve the item's cost from its author, if they can afford it.
+	 *
+	 * The balance check and the hold run under the author's credit lock, so
+	 * parallel submissions can't both spend the same credits.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool True when the item is paid for (held now or before, settled, or free); false when the author can't afford it.
+	 */
+	public function reserve_item( int $item_id ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
-			return;
+			return false;
 		}
 
 		$user_id = (int) $post->post_author;
-		$record  = $this->state( $item_id );
+
+		return (bool) Credits::with_user_lock(
+			$this->slug,
+			$user_id,
+			function () use ( $item_id, $user_id ): bool {
+				// Held or settled already: a second hold event (a resubmission,
+				// a retried request) must not reserve again.
+				if ( in_array( $this->record( $item_id )['state'], array( 'held', 'settled' ), true ) ) {
+					return true;
+				}
+
+				$cost = $this->resolve_cost( $item_id );
+				if ( $cost <= 0 ) {
+					return true;
+				}
+
+				if ( $this->current_balance( $user_id ) < $cost ) {
+					return false;
+				}
+
+				if ( ! $this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' ) ) {
+					return false;
+				}
+				$this->set_state( $item_id, 'held', $cost );
+				return true;
+			}
+		);
+	}
+
+	/**
+	 * Settle the item's open hold, for the amount held.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool True when the item is settled (now or before); false when there was no open hold to settle.
+	 */
+	public function settle_item( int $item_id ): bool {
+		$post = get_post( $item_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return false;
+		}
+
+		$user_id = (int) $post->post_author;
+		$record  = $this->record( $item_id );
+
+		// Recorded items settle only an open hold, for the amount held. A
+		// republish of a settled item (renewal, reactivation) or an item
+		// whose hold was never placed charges nothing more.
+		if ( '' !== $record['state'] ) {
+			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
+				$this->settle( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits deducted' );
+				$this->set_state( $item_id, 'settled', $record['cost'] );
+				return true;
+			}
+			return 'settled' === $record['state'];
+		}
+
+		// Items held before per-item records existed (pre-1.7.2).
+		$cost = $this->resolve_cost( $item_id );
+		if ( $cost <= 0 ) {
+			return true;
+		}
+		$this->settle( $user_id, $cost, $item_id, $this->config['label'] . ' — credits deducted' );
+		return true;
+	}
+
+	/**
+	 * Release the item's open hold back to its author.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool True when a hold was released now.
+	 */
+	public function release_item( int $item_id ): bool {
+		$post = get_post( $item_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return false;
+		}
+
+		$user_id = (int) $post->post_author;
+		$record  = $this->record( $item_id );
 
 		// Recorded items release only an open hold. Deactivating or trashing
 		// an item whose credits were already settled used to refund them,
@@ -229,17 +238,119 @@ final class Consumer {
 			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
 				$this->release( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits refunded' );
 				$this->set_state( $item_id, 'released', $record['cost'] );
+				return true;
 			}
-			return;
+			return false;
 		}
 
 		$cost = $this->resolve_cost( $item_id );
-
 		if ( $cost <= 0 ) {
-			return;
+			return false;
+		}
+		$this->release( $user_id, $cost, $item_id, $this->config['label'] . ' — credits refunded' );
+		return true;
+	}
+
+	/**
+	 * Bring a held or settled item in line with its current cost.
+	 *
+	 * For an item whose price changed after it was paid for (moved to a
+	 * dearer or cheaper tier): the difference is held or settled on top, or
+	 * handed back. Items with nothing charged are left alone; their next
+	 * reserve prices them fresh.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool False only when the author can't afford a price rise.
+	 */
+	public function reprice_item( int $item_id ): bool {
+		$post = get_post( $item_id );
+		if ( ! $post instanceof \WP_Post ) {
+			return false;
 		}
 
-		$this->release( $user_id, $cost, $item_id, $this->config['label'] . ' — credits refunded' );
+		$user_id = (int) $post->post_author;
+
+		return (bool) Credits::with_user_lock(
+			$this->slug,
+			$user_id,
+			function () use ( $item_id, $user_id ): bool {
+				$record = $this->record( $item_id );
+				if ( ! in_array( $record['state'], array( 'held', 'settled' ), true ) ) {
+					return true;
+				}
+
+				$cost  = max( 0, $this->resolve_cost( $item_id ) );
+				$delta = $cost - $record['cost'];
+				if ( 0 === $delta ) {
+					return true;
+				}
+
+				$label = $this->config['label'];
+				if ( $delta > 0 ) {
+					if ( $this->current_balance( $user_id ) < $delta ) {
+						return false;
+					}
+					if ( ! $this->reserve( $user_id, $delta, $item_id, $label . ' — price change held' ) ) {
+						return false;
+					}
+					if ( 'settled' === $record['state'] ) {
+						$this->settle( $user_id, $delta, $item_id, $label . ' — price change deducted' );
+					}
+				} else {
+					$this->release( $user_id, -$delta, $item_id, $label . ' — price change refunded' );
+				}
+
+				$this->set_state( $item_id, $record['state'], $cost );
+				return true;
+			}
+		);
+	}
+
+	/**
+	 * This consumer's record for an item: state and the amount it holds.
+	 *
+	 * States: '' (nothing recorded - items from before 1.7.2 behave as
+	 * they always did), 'held', 'settled', 'released'.
+	 *
+	 * @since 1.9.0 Public.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return array{state: string, cost: int}
+	 */
+	public function record( int $item_id ): array {
+		$raw = get_post_meta( $item_id, $this->state_key(), true );
+		return array(
+			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
+			'cost'  => is_array( $raw ) ? (int) ( $raw['cost'] ?? 0 ) : 0,
+		);
+	}
+
+	/**
+	 * Record an item's state.
+	 *
+	 * Consumers upgrading items charged before records existed can seed one
+	 * here (e.g. from their own ledger rows).
+	 *
+	 * @since 1.9.0 Public.
+	 *
+	 * @param int    $item_id Post/item ID.
+	 * @param string $state   held | settled | released.
+	 * @param int    $cost    Amount held, in resolve_cost() units.
+	 * @return void
+	 */
+	public function set_state( int $item_id, string $state, int $cost ): void {
+		update_post_meta( $item_id, $this->state_key(), array( 'state' => $state, 'cost' => $cost ) );
+	}
+
+	/**
+	 * Post meta key for this consumer's record.
+	 *
+	 * @return string
+	 */
+	private function state_key(): string {
+		return '_wbcom_credits_' . sanitize_key( $this->slug ) . '_' . sanitize_key( (string) $this->config['id'] );
 	}
 
 	/**

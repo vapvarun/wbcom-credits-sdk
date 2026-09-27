@@ -22,6 +22,10 @@ namespace Wbcom\Credits\Tests\Support;
 
 final class FakeWpdb {
 
+	/** @var int Named locks granted. */
+	public int $locks = 0;
+
+
 	public string $prefix = 'wp_';
 
 	public int $insert_id = 0;
@@ -105,6 +109,16 @@ final class FakeWpdb {
 		if ( preg_match( "/SHOW COLUMNS FROM\s+`?([^`\s]+)`?\s+LIKE\s+'([^']*)'/i", $sql, $m ) ) {
 			$cols = $this->table_columns[ $m[1] ] ?? array();
 			return in_array( $m[2], $cols, true ) ? $m[2] : null;
+		}
+		// MySQL named locks (Credits::with_user_lock). The fake is single
+		// threaded, so a lock is always granted; `locks` counts grants so a
+		// test can assert the work ran under one.
+		if ( preg_match( '/SELECT\s+GET_LOCK\(/i', $sql ) ) {
+			++$this->locks;
+			return '1';
+		}
+		if ( preg_match( '/SELECT\s+RELEASE_LOCK\(/i', $sql ) ) {
+			return '1';
 		}
 		// SHOW INDEX FROM `table` WHERE Key_name = 'name' — returns the table
 		// name (non-null) when the index exists, null otherwise.

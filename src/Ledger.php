@@ -66,11 +66,41 @@ final class Ledger {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id),
 			INDEX idx_user_id (user_id),
-			INDEX idx_entry_type (entry_type)
+			INDEX idx_entry_type (entry_type),
+			INDEX idx_item_id (item_id),
+			INDEX idx_user_item_type (user_id, item_id, entry_type)
 		) {$charset_collate};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( $sql );
+	}
+
+	/**
+	 * Add the item lookups' indexes to a ledger created before 1.9.0.
+	 *
+	 * Reconcilers and per-item history look rows up by item_id, which was a
+	 * full scan on a large ledger.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $prefix Plugin prefix.
+	 * @return void
+	 */
+	public static function maybe_add_indexes( string $prefix ): void {
+		global $wpdb;
+		$table = self::table_name( $prefix );
+
+		$indexes = array(
+			'idx_item_id'        => '(item_id)',
+			'idx_user_item_type' => '(user_id, item_id, entry_type)',
+		);
+		foreach ( $indexes as $name => $columns ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$exists = $wpdb->get_var( $wpdb->prepare( "SHOW INDEX FROM `{$table}` WHERE Key_name = %s", $name ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			if ( ! $exists ) {
+				$wpdb->query( "ALTER TABLE `{$table}` ADD KEY {$name} {$columns}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			}
+		}
 	}
 
 	/**

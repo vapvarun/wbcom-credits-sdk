@@ -126,5 +126,113 @@ namespace Wbcom\Credits\Tests\Credits {
 
 			$this->assertSame( 5.0, Credits::balance_money( self::SLUG, self::USER ) );
 		}
+
+		/** @var int Cost the repricable consumer charges. */
+		public static int $price = 10;
+
+		private function priced(): Consumer {
+			return new Consumer( self::SLUG, 'cst', array( 'id' => 'listing', 'label' => 'Listing', 'cost' => static fn () => self::$price ) );
+		}
+
+		public function test_reserve_item_reports_success_and_runs_under_the_lock(): void {
+			global $wpdb;
+			Credits::topup_money( self::SLUG, self::USER, 15.0, '', 'seed' );
+			$c = $this->consumer();
+
+			$this->assertTrue( $c->reserve_item( self::ITEM ) );
+			$this->assertTrue( $c->reserve_item( self::ITEM ), 'A second reserve on a held item is a no-op success.' );
+			$this->assertSame( 5.0, Credits::balance_money( self::SLUG, self::USER ), 'Held once.' );
+			$this->assertGreaterThan( 0, $wpdb->locks, 'Balance check and hold ran under the user lock.' );
+		}
+
+		public function test_reserve_item_refuses_what_the_author_cannot_afford(): void {
+			Credits::topup_money( self::SLUG, self::USER, 15.0, '', 'seed' );
+			$this->consumer()->reserve_item( self::ITEM );
+
+			$this->assertFalse( $this->consumer()->reserve_item( self::ITEM + 1 ), 'Only 5 left for a 10 cost.' );
+			$this->assertSame( 5.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
+
+		public function test_a_released_item_is_charged_again_when_resubmitted(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			$c = $this->consumer();
+
+			$c->reserve_item( self::ITEM );
+			$c->release_item( self::ITEM );
+			$this->assertTrue( $c->reserve_item( self::ITEM ) );
+
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ) );
+			$this->assertSame( 'held', $c->record( self::ITEM )['state'] );
+		}
+
+		public function test_settle_without_an_open_hold_charges_nothing(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			$c = $this->consumer();
+
+			$c->reserve_item( self::ITEM );
+			$c->release_item( self::ITEM );
+
+			$this->assertFalse( $c->settle_item( self::ITEM ), 'Rejected, then approved directly: nothing to settle.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
+
+		public function test_reprice_a_held_item_up_then_settle_charges_the_new_cost(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 10;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+
+			self::$price = 25;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$c->settle_item( self::ITEM );
+
+			$this->assertSame( 5.0, Credits::balance_money( self::SLUG, self::USER ) );
+			$this->assertSame( array( 'state' => 'settled', 'cost' => 25 ), $c->record( self::ITEM ) );
+		}
+
+		public function test_reprice_a_settled_item_charges_or_refunds_the_difference(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 10;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+			$c->settle_item( self::ITEM );
+
+			self::$price = 50;
+			$this->assertFalse( $c->reprice_item( self::ITEM ), '40 more with 20 left.' );
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ), 'A refused rise changes nothing.' );
+
+			self::$price = 15;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$this->assertSame( 15.0, Credits::balance_money( self::SLUG, self::USER ) );
+
+			self::$price = 5;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$this->assertSame( 25.0, Credits::balance_money( self::SLUG, self::USER ) );
+			$this->assertSame( array( 'state' => 'settled', 'cost' => 5 ), $c->record( self::ITEM ) );
+		}
+
+		public function test_reprice_leaves_an_unpaid_item_alone(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 50;
+
+			$this->assertTrue( $this->priced()->reprice_item( self::ITEM ) );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
+
+		public function test_registry_hands_out_one_consumer_per_id(): void {
+			Registry::instance()->register(
+				array(
+					'slug'      => 'consumer-lookup',
+					'prefix'    => 'cls',
+					'version'   => '1.0.0',
+					'consumers' => array( array( 'id' => 'post', 'label' => 'Post', 'cost' => 1 ) ),
+				)
+			);
+
+			$first = Registry::instance()->consumer( 'consumer-lookup', 'post' );
+			$this->assertInstanceOf( Consumer::class, $first );
+			$this->assertSame( $first, Registry::instance()->consumer( 'consumer-lookup', 'post' ) );
+			$this->assertNull( Registry::instance()->consumer( 'consumer-lookup', 'missing' ) );
+		}
 	}
 }

@@ -180,6 +180,7 @@ final class Credits {
 			 * @param string $note    Description.
 			 */
 			do_action( 'wbcom_credits_topped_up', $slug, $user_id, $amount, $note );
+			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
 		return $result;
@@ -253,6 +254,7 @@ final class Credits {
 			 * @param int    $item_id Item ID.
 			 */
 			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
+			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
 		return $result;
@@ -302,6 +304,7 @@ final class Credits {
 			 * @param array<string, mixed> $context Linkage context: item_id, ledger_id, note, reason.
 			 */
 			do_action( 'wbcom_credits_refunded', $slug, $user_id, abs( $amount ), $context );
+			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
 		return $result;
@@ -339,7 +342,59 @@ final class Credits {
 		$entry_type = $amount >= 0 ? 'topup' : 'deduction';
 		$note       = $note ?: 'Admin adjustment';
 
-		return Ledger::insert( self::get_prefix( $slug ), $user_id, $entry_type, $amount, 0, $note );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, $entry_type, $amount, 0, $note );
+
+		if ( $result ) {
+			/**
+			 * Fires after an administrator adjusts a balance, in either direction.
+			 *
+			 * @since 1.9.0
+			 *
+			 * @param string $slug    Plugin slug.
+			 * @param int    $user_id WordPress user ID.
+			 * @param int    $amount  Signed amount (positive added, negative removed).
+			 * @param string $note    Admin note.
+			 */
+			do_action( 'wbcom_credits_adjusted', $slug, $user_id, $amount, $note );
+			self::maybe_fire_low_balance( $slug, $user_id );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Run $fn while holding this user's credit lock for the slug.
+	 *
+	 * Reading the balance and writing a hold are two statements, so two
+	 * requests spending at once could both see enough credit and both write
+	 * a hold. Everything that checks a balance before spending does it in
+	 * here: the lock is a MySQL named lock, so it serialises spends across
+	 * PHP workers, and the balance cache is dropped on entry so the check
+	 * reads the ledger as it is now.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string   $slug    Plugin slug.
+	 * @param int      $user_id WordPress user ID.
+	 * @param callable $fn      Work to do under the lock.
+	 * @return mixed What $fn returned, or false when the lock could not be taken within 10 seconds.
+	 */
+	public static function with_user_lock( string $slug, int $user_id, callable $fn ): mixed {
+		global $wpdb;
+
+		$name = 'wbcom_credits_' . self::get_prefix( $slug ) . '_' . $user_id;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		if ( 1 !== (int) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, %d )', $name, 10 ) ) ) {
+			return false;
+		}
+
+		self::invalidate_cache( $slug, $user_id );
+		try {
+			return $fn();
+		} finally {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) );
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -771,18 +826,31 @@ final class Credits {
 		$config    = Registry::instance()->get( $slug );
 		$threshold = (int) ( $config['settings']['low_threshold'] ?? 5 );
 		$balance   = self::get_balance( $slug, $user_id );
+		$flag      = '_wbcom_credits_low_' . sanitize_key( $slug );
 
-		if ( $balance <= $threshold ) {
-			/**
-			 * Fires when a user's credit balance falls below the configured threshold.
-			 *
-			 * @since 1.0.0
-			 *
-			 * @param string $slug    Plugin slug.
-			 * @param int    $user_id WordPress user ID.
-			 * @param int    $balance Current balance.
-			 */
-			do_action( 'wbcom_credits_low', $slug, $user_id, $balance );
+		// Once per crossing: the flag is set when the alert fires and cleared
+		// when the balance climbs back above the threshold. Without it every
+		// spend below the threshold sent another "running low" email.
+		if ( $balance > $threshold ) {
+			delete_user_meta( $user_id, $flag );
+			return;
 		}
+		if ( get_user_meta( $user_id, $flag, true ) ) {
+			return;
+		}
+		update_user_meta( $user_id, $flag, 1 );
+
+		/**
+		 * Fires when a user's credit balance falls to or below the configured
+		 * threshold. Once per crossing since 1.9.0; it fires again only after
+		 * the balance has gone back above the threshold.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param string $slug    Plugin slug.
+		 * @param int    $user_id WordPress user ID.
+		 * @param int    $balance Current balance.
+		 */
+		do_action( 'wbcom_credits_low', $slug, $user_id, $balance );
 	}
 }

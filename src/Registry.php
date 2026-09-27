@@ -34,6 +34,13 @@ final class Registry {
 	private array $plugins = array();
 
 	/**
+	 * Consumer instances keyed by slug, then consumer id.
+	 *
+	 * @var array<string, array<string, Consumer>>
+	 */
+	private array $consumers = array();
+
+	/**
 	 * Register a consuming plugin.
 	 *
 	 * @since 1.0.0
@@ -123,6 +130,32 @@ final class Registry {
 	}
 
 	/**
+	 * The Consumer object for one of a plugin's registered consumers.
+	 *
+	 * For plugins that drive an item's charge themselves (reserve before
+	 * publishing, settle, release, reprice) instead of, or as well as,
+	 * through the hold_on / deduct_on / refund_on hooks.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug        Plugin slug.
+	 * @param string $consumer_id Consumer id, e.g. 'job_post'.
+	 * @return Consumer|null Null when the slug or consumer isn't registered.
+	 */
+	public function consumer( string $slug, string $consumer_id ): ?Consumer {
+		if ( isset( $this->consumers[ $slug ][ $consumer_id ] ) ) {
+			return $this->consumers[ $slug ][ $consumer_id ];
+		}
+		foreach ( (array) ( $this->plugins[ $slug ]['consumers'] ?? array() ) as $config ) {
+			if ( (string) ( $config['id'] ?? '' ) === $consumer_id ) {
+				$this->consumers[ $slug ][ $consumer_id ] = new Consumer( $slug, (string) $this->plugins[ $slug ]['prefix'], $config );
+				return $this->consumers[ $slug ][ $consumer_id ];
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Get all registered plugin slugs.
 	 *
 	 * @since 1.0.0
@@ -158,8 +191,10 @@ final class Registry {
 
 			// Wire consumer hooks (hold/deduct/refund lifecycle).
 			foreach ( $config['consumers'] as $consumer_config ) {
-				$consumer = new Consumer( $slug, $config['prefix'], $consumer_config );
-				$consumer->register_hooks();
+				$consumer = $this->consumer( $slug, (string) ( $consumer_config['id'] ?? '' ) );
+				if ( $consumer ) {
+					$consumer->register_hooks();
+				}
 			}
 
 			// Initialize adapter registry for this plugin.
@@ -254,7 +289,7 @@ final class Registry {
 	 * @since 1.3.1
 	 * @var int
 	 */
-	private const SCHEMA_VERSION = 3;
+	private const SCHEMA_VERSION = 4;
 
 	/**
 	 * Create or upgrade the per-consumer schema, guarded by a stored
@@ -283,6 +318,7 @@ final class Registry {
 
 		// Append-only ledger (canonical balance source).
 		Ledger::maybe_create_table( $prefix );
+		Ledger::maybe_add_indexes( $prefix );
 
 		// Per-gateway transaction log for direct payments.
 		Gateways\Transaction_Log::maybe_create_table( $prefix );

@@ -126,10 +126,12 @@ final class REST {
 						'required'          => true,
 						'sanitize_callback' => 'absint',
 					),
+					// Signed: a negative amount removes credits. absint used to turn
+					// -3 into +3, so a correction added what it meant to take away.
 					'amount'  => array(
 						'type'              => 'integer',
 						'required'          => true,
-						'sanitize_callback' => 'absint',
+						'sanitize_callback' => 'intval',
 					),
 					'note'    => array(
 						'type'              => 'string',
