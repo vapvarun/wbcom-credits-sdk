@@ -11,7 +11,7 @@
  * `wbcom_credits_sdk_registry` hook.
  *
  * @package Wbcom\Credits
- * @version 1.9.2
+ * @version 1.9.3
  * @license GPL-2.0+
  */
 
@@ -63,7 +63,107 @@ defined( 'ABSPATH' ) || exit;
 if ( ! isset( $GLOBALS['wbcom_credits_sdk_copies'] ) ) {
 	$GLOBALS['wbcom_credits_sdk_copies'] = array();
 }
-$GLOBALS['wbcom_credits_sdk_copies'][ __DIR__ ] = '1.9.2';
+$GLOBALS['wbcom_credits_sdk_copies'][ __DIR__ ] = '1.9.3';
+
+// Announce this copy's class map too (1.9.3). The guarded loader below is
+// defined by whichever copy is included FIRST, so its map can be older than
+// the winning copy: a 1.7.2 map has no Expiry, and a 1.9.x Registry loaded
+// from the winner asked for it and fataled the site (Career Board Pro 1.9.0
+// + WB Listora 1.7.2). Each copy now brings its own map, and the loader
+// registered below serves every class from the WINNER's map.
+if ( ! isset( $GLOBALS['wbcom_credits_sdk_maps'] ) ) {
+	$GLOBALS['wbcom_credits_sdk_maps'] = array();
+}
+$GLOBALS['wbcom_credits_sdk_maps'][ __DIR__ ] = array(
+		'Wbcom\\Credits\\Versions'                          => '/src/Versions.php',
+		'Wbcom\\Credits\\Registry'                          => '/src/Registry.php',
+		'Wbcom\\Credits\\Ledger'                            => '/src/Ledger.php',
+		'Wbcom\\Credits\\Money'                             => '/src/Money.php',
+		'Wbcom\\Credits\\Credits'                           => '/src/Credits.php',
+		'Wbcom\\Credits\\Consumer'                          => '/src/Consumer.php',
+		'Wbcom\\Credits\\REST'                              => '/src/REST.php',
+		'Wbcom\\Credits\\Template'                          => '/src/Template.php',
+		'Wbcom\\Credits\\Adapters\\AdapterInterface'        => '/src/Adapters/AdapterInterface.php',
+		'Wbcom\\Credits\\Adapters\\AdapterRegistry'         => '/src/Adapters/AdapterRegistry.php',
+		'Wbcom\\Credits\\Adapters\\WooCommerceAdapter'      => '/src/Adapters/WooCommerce.php',
+		'Wbcom\\Credits\\Adapters\\WooSubscriptionsAdapter' => '/src/Adapters/WooSubscriptions.php',
+		'Wbcom\\Credits\\Adapters\\WooMembershipsAdapter'   => '/src/Adapters/WooMemberships.php',
+		'Wbcom\\Credits\\Adapters\\PMProAdapter'            => '/src/Adapters/PMPro.php',
+		'Wbcom\\Credits\\Adapters\\MemberPressAdapter'      => '/src/Adapters/MemberPress.php',
+		'Wbcom\\Credits\\Gateways\\GatewayInterface'        => '/src/Gateways/GatewayInterface.php',
+		'Wbcom\\Credits\\Gateways\\Gateway_Event'           => '/src/Gateways/Gateway_Event.php',
+		'Wbcom\\Credits\\Gateways\\Processed_Events'        => '/src/Gateways/Processed_Events.php',
+		'Wbcom\\Credits\\Gateways\\Idempotency'             => '/src/Gateways/Idempotency.php',
+		'Wbcom\\Credits\\Gateways\\Pending_Checkouts'       => '/src/Gateways/Pending_Checkouts.php',
+		'Wbcom\\Credits\\Gateways\\Signature_Verifier'      => '/src/Gateways/Signature_Verifier.php',
+		'Wbcom\\Credits\\Gateways\\Transaction_Log'         => '/src/Gateways/Transaction_Log.php',
+		'Wbcom\\Credits\\Gateways\\Abstract_Gateway'        => '/src/Gateways/Abstract_Gateway.php',
+		'Wbcom\\Credits\\Gateways\\Stripe'                  => '/src/Gateways/Stripe.php',
+		'Wbcom\\Credits\\Gateways\\PayPal'                  => '/src/Gateways/PayPal.php',
+		'Wbcom\\Credits\\Gateways\\Gateway_Registry'        => '/src/Gateways/Gateway_Registry.php',
+		'Wbcom\\Credits\\Gateways\\Webhook_Controller'      => '/src/Gateways/Webhook_Controller.php',
+		'Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => '/src/Gateways/Admin_Form_Renderer.php',
+		'Wbcom\\Credits\\Gateways\\Pricing'                 => '/src/Gateways/Pricing.php',
+		'Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => '/src/Gateways/Pack_Admin_Renderer.php',
+		'Wbcom\\Credits\\Gateways\\PricingException'        => '/src/Gateways/Pricing.php',
+		'Wbcom\\Credits\\Gateways\\Checkout_Settings'       => '/src/Gateways/Checkout_Settings.php',
+		'Wbcom\\Credits\\Gateways\\Coupons'                 => '/src/Gateways/Coupons.php',
+		'Wbcom\\Credits\\Gateways\\Order'                   => '/src/Gateways/Order.php',
+		'Wbcom\\Credits\\Gateways\\Fulfilment'              => '/src/Gateways/Fulfilment.php',
+		'Wbcom\\Credits\\Gateways\\Reconciler'              => '/src/Gateways/Reconciler.php',
+		'Wbcom\\Credits\\Support\\Currencies'               => '/src/Support/Currencies.php',
+		'Wbcom\\Credits\\Support\\Countries'                => '/src/Support/Countries.php',
+		'Wbcom\\Credits\\Billing'                           => '/src/Billing.php',
+		'Wbcom\\Credits\\Receipt'                           => '/src/Receipt.php',
+		'Wbcom\\Credits\\Expiry'                            => '/src/Expiry.php',
+);
+
+if ( empty( $GLOBALS['wbcom_credits_sdk_map_loader'] ) ) {
+	$GLOBALS['wbcom_credits_sdk_map_loader'] = true;
+
+	/*
+	 * Serve every SDK class from the newest announced copy, using THAT
+	 * copy's own class map. Registered first in the autoload queue, so it
+	 * answers before a guarded loader an older copy defined. When the winner
+	 * predates 1.9.3 (it announced no map) this does nothing and the guarded
+	 * loader answers, as before.
+	 */
+	spl_autoload_register(
+		static function ( string $class ): void {
+			if ( 0 !== strpos( $class, 'Wbcom\\Credits\\' ) ) {
+				return;
+			}
+
+			// Same election as wbcom_credits_sdk_dir(): highest version,
+			// ties keep the first announced.
+			$winner  = '';
+			$highest = '';
+			foreach ( (array) ( $GLOBALS['wbcom_credits_sdk_copies'] ?? array() ) as $dir => $version ) {
+				if ( '' === $highest || version_compare( (string) $version, $highest, '>' ) ) {
+					$highest = (string) $version;
+					$winner  = (string) $dir;
+				}
+			}
+
+			$map = $GLOBALS['wbcom_credits_sdk_maps'][ $winner ] ?? null;
+			if ( ! is_array( $map ) || ! isset( $map[ $class ] ) ) {
+				return;
+			}
+
+			if ( ! defined( 'WBCOM_CREDITS_SDK_LOADED_FROM' ) ) {
+				define( 'WBCOM_CREDITS_SDK_LOADED_FROM', $winner );
+				define( 'WBCOM_CREDITS_SDK_LOADED_VERSION', $highest );
+			}
+
+			$file = $winner . $map[ $class ];
+			if ( file_exists( $file ) ) {
+				require_once $file;
+			}
+		},
+		true,
+		true
+	);
+}
 
 if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
 
@@ -78,49 +178,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
 	 * @return array<string, string>
 	 */
 	function wbcom_credits_sdk_class_map(): array {
-		return array(
-			'Wbcom\\Credits\\Versions'                          => '/src/Versions.php',
-			'Wbcom\\Credits\\Registry'                          => '/src/Registry.php',
-			'Wbcom\\Credits\\Ledger'                            => '/src/Ledger.php',
-			'Wbcom\\Credits\\Money'                             => '/src/Money.php',
-			'Wbcom\\Credits\\Credits'                           => '/src/Credits.php',
-			'Wbcom\\Credits\\Consumer'                          => '/src/Consumer.php',
-			'Wbcom\\Credits\\REST'                              => '/src/REST.php',
-			'Wbcom\\Credits\\Template'                          => '/src/Template.php',
-			'Wbcom\\Credits\\Adapters\\AdapterInterface'        => '/src/Adapters/AdapterInterface.php',
-			'Wbcom\\Credits\\Adapters\\AdapterRegistry'         => '/src/Adapters/AdapterRegistry.php',
-			'Wbcom\\Credits\\Adapters\\WooCommerceAdapter'      => '/src/Adapters/WooCommerce.php',
-			'Wbcom\\Credits\\Adapters\\WooSubscriptionsAdapter' => '/src/Adapters/WooSubscriptions.php',
-			'Wbcom\\Credits\\Adapters\\WooMembershipsAdapter'   => '/src/Adapters/WooMemberships.php',
-			'Wbcom\\Credits\\Adapters\\PMProAdapter'            => '/src/Adapters/PMPro.php',
-			'Wbcom\\Credits\\Adapters\\MemberPressAdapter'      => '/src/Adapters/MemberPress.php',
-			'Wbcom\\Credits\\Gateways\\GatewayInterface'        => '/src/Gateways/GatewayInterface.php',
-			'Wbcom\\Credits\\Gateways\\Gateway_Event'           => '/src/Gateways/Gateway_Event.php',
-			'Wbcom\\Credits\\Gateways\\Processed_Events'        => '/src/Gateways/Processed_Events.php',
-			'Wbcom\\Credits\\Gateways\\Idempotency'             => '/src/Gateways/Idempotency.php',
-			'Wbcom\\Credits\\Gateways\\Pending_Checkouts'       => '/src/Gateways/Pending_Checkouts.php',
-			'Wbcom\\Credits\\Gateways\\Signature_Verifier'      => '/src/Gateways/Signature_Verifier.php',
-			'Wbcom\\Credits\\Gateways\\Transaction_Log'         => '/src/Gateways/Transaction_Log.php',
-			'Wbcom\\Credits\\Gateways\\Abstract_Gateway'        => '/src/Gateways/Abstract_Gateway.php',
-			'Wbcom\\Credits\\Gateways\\Stripe'                  => '/src/Gateways/Stripe.php',
-			'Wbcom\\Credits\\Gateways\\PayPal'                  => '/src/Gateways/PayPal.php',
-			'Wbcom\\Credits\\Gateways\\Gateway_Registry'        => '/src/Gateways/Gateway_Registry.php',
-			'Wbcom\\Credits\\Gateways\\Webhook_Controller'      => '/src/Gateways/Webhook_Controller.php',
-			'Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => '/src/Gateways/Admin_Form_Renderer.php',
-			'Wbcom\\Credits\\Gateways\\Pricing'                 => '/src/Gateways/Pricing.php',
-			'Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => '/src/Gateways/Pack_Admin_Renderer.php',
-			'Wbcom\\Credits\\Gateways\\PricingException'        => '/src/Gateways/Pricing.php',
-			'Wbcom\\Credits\\Gateways\\Checkout_Settings'       => '/src/Gateways/Checkout_Settings.php',
-			'Wbcom\\Credits\\Gateways\\Coupons'                 => '/src/Gateways/Coupons.php',
-			'Wbcom\\Credits\\Gateways\\Order'                   => '/src/Gateways/Order.php',
-			'Wbcom\\Credits\\Gateways\\Fulfilment'              => '/src/Gateways/Fulfilment.php',
-			'Wbcom\\Credits\\Gateways\\Reconciler'              => '/src/Gateways/Reconciler.php',
-			'Wbcom\\Credits\\Support\\Currencies'               => '/src/Support/Currencies.php',
-			'Wbcom\\Credits\\Support\\Countries'                => '/src/Support/Countries.php',
-			'Wbcom\\Credits\\Billing'                           => '/src/Billing.php',
-			'Wbcom\\Credits\\Receipt'                           => '/src/Receipt.php',
-			'Wbcom\\Credits\\Expiry'                            => '/src/Expiry.php',
-		);
+		return (array) ( $GLOBALS['wbcom_credits_sdk_maps'][ __DIR__ ] ?? array() );
 	}
 
 	/**
@@ -219,10 +277,10 @@ if ( ! defined( 'WBCOM_CREDITS_SDK_AUTOLOADER_LOADED' ) ) {
  * The function-name guard makes this file idempotent — re-including it
  * after the first run is a clean no-op.
  */
-if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_2' ) && function_exists( 'add_action' ) ) {
+if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_3' ) && function_exists( 'add_action' ) ) {
 
 	add_action( 'after_setup_theme', array( '\\Wbcom\\Credits\\Versions', 'initialize_latest_version' ), 1, 0 );
-	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_9_2', 0, 0 );
+	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_9_3', 0, 0 );
 
 	/**
 	 * Register this version with Versions::instance().
@@ -230,8 +288,8 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_2' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_register_1_9_2(): void {
-		\Wbcom\Credits\Versions::instance()->register( '1.9.2', 'wbcom_credits_sdk_initialize_1_9_2' );
+	function wbcom_credits_sdk_register_1_9_3(): void {
+		\Wbcom\Credits\Versions::instance()->register( '1.9.3', 'wbcom_credits_sdk_initialize_1_9_3' );
 	}
 
 	/**
@@ -240,9 +298,9 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_2' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_initialize_1_9_2(): void {
+	function wbcom_credits_sdk_initialize_1_9_3(): void {
 		if ( ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-			define( 'WBCOM_CREDITS_SDK_VERSION', '1.9.2' );
+			define( 'WBCOM_CREDITS_SDK_VERSION', '1.9.3' );
 		}
 		if ( ! defined( 'WBCOM_CREDITS_SDK_PATH' ) ) {
 			define( 'WBCOM_CREDITS_SDK_PATH', __DIR__ );
@@ -259,7 +317,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_2' ) && function_exists(
 	// got here, run registration + initialization synchronously so the SDK
 	// is usable on this same request.
 	if ( did_action( 'after_setup_theme' ) && ! doing_action( 'after_setup_theme' ) && ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-		wbcom_credits_sdk_register_1_9_2();
+		wbcom_credits_sdk_register_1_9_3();
 		\Wbcom\Credits\Versions::initialize_latest_version();
 	}
 }

@@ -15,14 +15,14 @@ win on load order and hand a newer consumer a class without the methods it
 calls. That is what consumers' readiness checks are for (Guard column), and
 why bundles should still be kept current rather than left to the election.
 
-Last audited: 2026-09-27, against 1.9.2. Tags: v1.8.0, v1.8.1, v1.9.0, v1.9.1,
-v1.9.2 (1.7.1 and 1.7.2 were folded into 1.8.0 and never tagged).
+Last audited: 2026-09-27, against 1.9.3. Tags: v1.8.0, v1.8.1, v1.9.0, v1.9.1,
+v1.9.2, v1.9.3 (1.7.1 and 1.7.2 were folded into 1.8.0 and never tagged).
 
 ## Consumers
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.1 → 1.9.2* | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.2 → 1.9.3* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.0 development build (branch `1.8.0`); re-bundle the tag | `JobCharge::consumer()` gates on `Registry::consumer()` |
@@ -36,7 +36,9 @@ Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
 
 **Everyone moves to the latest tag on their next release; WB Ad Manager
-Pro goes first.** WB Listora, WP Career Board Pro and WPConnectPress are
+Pro goes first.** Never ship a 1.9.0-1.9.2 bundle: next to an older copy
+that loads first (WB Listora 1.7.2, alphabetically earlier) it fatals the
+site. 1.9.3 fixes that. WB Listora, WP Career Board Pro and WPConnectPress are
 parked ("Not now" on the Wbcom Credits SDK board) until then. Their bundles
 lack the 1.9.x integrity fixes: holds settled by id, balance checks under a
 lock, claims and credits in one transaction, events after commit, atomic

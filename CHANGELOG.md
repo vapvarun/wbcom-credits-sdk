@@ -2,6 +2,12 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.3] - September 2026
+
+### Fixed
+
+- **A site with an older SDK copy loaded first no longer fatals.** The class map is defined by whichever copy is included first (alphabetical plugin order), while classes load from the newest copy. With WB Listora (SDK 1.7.2) and WP Career Board Pro (SDK 1.9.0) both active, 1.9.0's `Registry` asked for `Wbcom\Credits\Expiry`, which 1.7.2's map doesn't list, and every request returned a 500. Each copy now announces its own class map with its version, and one autoloader, registered ahead of any older one, serves every class from the winning copy's map. The fix protects any site where the newest copy is 1.9.3 or later, whatever older copies load first. `tests/loader-election-check.php` reproduces the case with the real v1.8.1 bootstrap loaded first.
+
 ## [1.9.2] - September 2026
 
 Fixes from the first independent review of 1.9.1 (Wbcom Credits SDK board), done before any consumer ships 1.9.x. Every item was verified in code before it was fixed.
