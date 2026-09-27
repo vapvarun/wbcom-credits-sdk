@@ -11,14 +11,14 @@
 
 declare( strict_types=1 );
 
-namespace Wbcom\Credits\Tests;
+namespace Wbcom\Credits\Tests\Loader;
 
 use PHPUnit\Framework\TestCase;
 
 final class ClassMapTest extends TestCase {
 
 	public function test_every_src_class_is_in_the_loader_map(): void {
-		$root   = dirname( __DIR__ );
+		$root   = dirname( __DIR__, 2 );
 		$loader = (string) file_get_contents( $root . '/wbcom-credits-sdk.php' );
 		preg_match_all( "/'(Wbcom\\\\\\\\Credits\\\\\\\\[A-Za-z_\\\\\\\\]+)'\\s*=>\\s*'([^']+)'/", $loader, $m, PREG_SET_ORDER );
 		$map = array();
