@@ -168,8 +168,11 @@ final class Ledger {
 				'entry_type' => $entry_type,
 				'amount'     => $amount,
 				'note'       => $note,
+				// UTC from PHP, never the column default: MySQL's
+				// CURRENT_TIMESTAMP follows the server's time zone.
+				'created_at' => current_time( 'mysql', true ),
 			),
-			array( '%d', '%d', '%s', '%d', '%s' )
+			array( '%d', '%d', '%s', '%d', '%s', '%s' )
 		);
 
 		return false === $result ? false : (int) $wpdb->insert_id;

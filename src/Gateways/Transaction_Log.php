@@ -166,8 +166,9 @@ final class Transaction_Log {
 				'amount_cents'   => (int) ( $row['amount_cents'] ?? 0 ),
 				'currency'       => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
 				'ledger_id'      => (int) ( $row['ledger_id'] ?? 0 ),
+				'created_at'     => current_time( 'mysql', true ), // UTC, see Ledger::insert().
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%s' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
 	}
@@ -199,8 +200,9 @@ final class Transaction_Log {
 				'currency'     => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
 				'ledger_id'    => (int) ( $row['ledger_id'] ?? 0 ),
 				'parent_id'    => (int) ( $row['parent_id'] ?? 0 ),
+				'created_at'   => current_time( 'mysql', true ), // UTC, see Ledger::insert().
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d' )
+			array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d', '%s' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
 	}

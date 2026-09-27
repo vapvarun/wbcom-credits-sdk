@@ -265,8 +265,9 @@ final class WooCommerceAdapter implements AdapterInterface {
 	 * Revokes up to the order's refunded fraction of what it granted, minus
 	 * anything already revoked, so several partial refunds add up to the grant
 	 * and never past it. Claimed once per refund id, so a re-fired hook for the
-	 * same refund is a no-op. The balance may go negative when the credits were
-	 * already spent, as it does for a gateway refund.
+	 * same refund is a no-op. Spent credits are consumed, so only the unspent
+	 * balance is taken back and the balance never goes negative, the same as
+	 * a gateway refund.
 	 *
 	 * @since 1.7.2
 	 *
