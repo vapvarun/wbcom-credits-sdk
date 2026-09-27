@@ -55,7 +55,8 @@ is off. WB Listora Pro hooks it to its Monetization toggle.
 
 These five cover bundling. How a consumer must USE the SDK (fix upstream,
 public API only, one unit rule, safe spends, UTC, gating) is in
-[docs/CONSUMER-RULES.md](docs/CONSUMER-RULES.md); every consumer follows it. The
+[docs/CONSUMER-RULES.md](docs/CONSUMER-RULES.md); every consumer follows it. A new
+consumer starts from [docs/INTEGRATION-GUIDE.md](docs/INTEGRATION-GUIDE.md). The
 design gaps behind the repeated fixes are in
 [docs/AUDIT-2026-09-27.md](docs/AUDIT-2026-09-27.md).
 
