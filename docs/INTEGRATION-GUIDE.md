@@ -1,6 +1,6 @@
 # Integrating the Credits SDK into a plugin
 
-A step-by-step guide for a plugin that wants credits or a money balance: bundle the SDK, register, take money in, charge for things, give money back, and report on it. Written against **1.9.2**.
+A step-by-step guide for a plugin that wants credits or a money balance: bundle the SDK, register, take money in, charge for things, give money back, and report on it. Written against **1.9.4**.
 
 Read [CONSUMER-RULES.md](CONSUMER-RULES.md) alongside this. The rules say what every consumer must and must not do; this guide shows how. Payment gateways and the checkout screen have their own guides, linked where they come up.
 
@@ -166,7 +166,7 @@ For "an item is submitted, held while it waits, then approved or rejected", decl
 ),
 ```
 
-The item's author pays. In money mode the cost is a whole amount of money (`10` = 10.00). Consumers do not take decimals yet, so for a 2.50 fee use pattern 6b. A second submit does not hold twice. A rejected item's hold is released. An approved item is charged once, however often the event fires. When you need the result, call the methods directly: `Registry::instance()->consumer( 'my-plugin', 'listing' )->reserve_item( $id )` returns false when the author cannot afford it. `reprice_item()` charges or refunds the difference when an item moves to another tier.
+The item's author pays. In money mode the cost is an amount of money and may have decimals (`2.5` = 2.50; 1.9.4+). A second submit does not hold twice. A rejected item's hold is released. An approved item is charged once, however often the event fires. When you need the result, call the methods directly: `Registry::instance()->consumer( 'my-plugin', 'listing' )->reserve_item( $id )` returns false when the author cannot afford it. `reprice_item()` charges or refunds the difference when an item moves to another tier.
 
 ### 6b. Hold, then settle or release (your own approval flow)
 
