@@ -110,6 +110,34 @@ final class GatewayMoneyModeTest extends TestCase {
 		self::assertSame( (float) self::CREDITS, Credits::balance_money( self::SLUG, self::USER_ID ) );
 	}
 
+	public function test_partial_refund_revokes_cents_not_whole_units(): void {
+		global $wpdb;
+		$this->deliver_checkout_webhook();
+
+		( new Stripe() )->handle_webhook(
+			self::SLUG,
+			array(
+				'id'   => 'evt_money_refund_partial',
+				'type' => 'charge.refunded',
+				'data' => array(
+					'object' => array(
+						'payment_intent'  => 'pi_money_1',
+						'amount_refunded' => 333,
+						'currency'        => strtolower( self::CURRENCY ),
+						'metadata'        => array( 'wbcom_session' => self::SESSION_ID ),
+					),
+				),
+			)
+		);
+
+		// 33.3% of 100.00 is 33.30. Before 1.9.0 the share was floored in
+		// whole units, revoking 33.00.
+		self::assertSame( 10000 - 3330, Credits::get_balance( self::SLUG, self::USER_ID ) );
+
+		$rows = array_values( $wpdb->tables[ \Wbcom\Credits\Ledger::table_name( self::PREFIX ) ] );
+		self::assertSame( array( 'purchase', 'gateway_refund' ), array_column( $rows, 'reason' ) );
+	}
+
 	public function test_full_refund_revokes_the_same_money_amount(): void {
 		$this->deliver_checkout_webhook();
 

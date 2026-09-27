@@ -84,18 +84,27 @@ Credits::topup( 'my-plugin', $user_id, 50, 'Manual top-up by admin' );
 // Admin adjustment (positive or negative)
 Credits::adjust( 'my-plugin', $user_id, -10, 'Penalty for violation' );
 
-// Place a hold manually
-Credits::hold( 'my-plugin', $user_id, 5, $item_id, 'Premium feature access' );
+// Charge with an approval step (1.9.0): hold only if affordable, keep the id.
+$hold_id = Credits::try_hold( 'my-plugin', $user_id, 5, $item_id, 'Premium feature access' );
+if ( false === $hold_id ) {
+    // Balance too low (checked under the user's lock).
+}
 
-// Deduct (settles a hold)
-Credits::deduct( 'my-plugin', $user_id, 5, $item_id, 'Feature access confirmed' );
+// Approved: settle that hold. Rejected: release it. Each works once.
+Credits::settle_hold( 'my-plugin', $user_id, $hold_id );
+Credits::release_hold( 'my-plugin', $user_id, $hold_id );
 
-// Refund a hold
-Credits::refund( 'my-plugin', $user_id, 5, $item_id, 'Access denied — credits returned' );
+// Charge per event, no approval step (1.9.0): checked and written under the lock.
+Credits::spend( 'my-plugin', $user_id, 1, $ad_id, 'Click', 'click:' . $click_id );
 
-// Cancel an unconsumed hold (hard delete)
-Credits::cancel_hold( 'my-plugin', $user_id, $item_id );
+// Credit a payment exactly once (claim + credit in one transaction).
+Credits::topup_once( 'my-plugin', 'adapter:my-shop', 'order:' . $order_id, $user_id, 50, 'Order #' . $order_id );
+
+// Cancel a hold that is still open (hard delete). Settled holds are never touched.
+Credits::cancel_hold_by_id( 'my-plugin', $user_id, $hold_id );
 ```
+
+Older calls still work: `hold()` (no balance check), `deduct( $item_id )` (settles the item's open hold, or returns false), `refund( $item_id )` (releases the item's open hold, or credits the amount back) and `cancel_hold( $item_id )` (open holds only). A consumer with its own check-then-write can wrap it in `Credits::with_user_lock()`.
 
 ### Consumer Architecture Patterns (READ THIS — every consumer plugin needs both)
 
@@ -223,11 +232,23 @@ foreach ( $entries as $entry ) {
         '%s: %+d credits (%s) — %s',
         $entry->created_at,
         $entry->amount,
-        $entry->entry_type,  // topup, hold, deduction, refund
+        $entry->entry_type,  // topup, hold, deduction, refund, expiry
         $entry->note
     );
 }
+
+// Reports (1.9.0): filter instead of querying the table.
+$spent_this_month = Credits::sum_ledger(
+    'my-plugin',
+    array(
+        'reason' => 'spend',
+        'since'  => get_gmt_from_date( wp_date( 'Y-m-01 00:00:00' ) ), // UTC.
+    )
+);
+$refunds = Credits::query_ledger( 'my-plugin', array( 'reason' => array( 'refund', 'gateway_refund' ), 'limit' => 20 ) );
 ```
+
+Every row's `reason` says what happened: `purchase`, `topup`, `hold`, `hold_release`, `spend`, `refund`, `gateway_refund`, `admin_adjust`, `expiry` (empty on rows written before 1.9.0). `reference` holds the order / session / event id, and `hold_id` links a settle or release to its hold.
 
 ### Charging an item (since 1.9.0)
 
@@ -438,11 +459,11 @@ POST /wp-json/wbcom-credits/v1/my-plugin/topup
 { "user_id": 42, "amount": 10, "note": "Bonus credits" }
 ```
 
-`amount` is signed since 1.9.0: a negative amount removes credits.
+`amount` is signed since 1.9.0: a negative amount removes credits. It is in ledger units: credits, or minor units (cents) for a money consumer, which can send `"amount_money": 12.50` instead.
 
 Response:
 ```json
-{ "user_id": 42, "adjusted": 10, "new_balance": 25 }
+{ "user_id": 42, "adjusted": 10, "new_balance": 25, "unit": "credits" }
 ```
 
 ---
@@ -714,11 +735,15 @@ The SDK creates one table per consuming plugin: `{wp_prefix}{plugin_prefix}_cred
 | entry_type | VARCHAR(20) | topup, hold, deduction, refund |
 | amount | INT | Signed — positive for credits in, negative for out |
 | note | VARCHAR(255) | Human-readable description |
-| created_at | DATETIME | Auto-timestamp |
+| expires_at | DATETIME NULL | When a top-up's credits lapse, UTC (1.9.0) |
+| reason | VARCHAR(32) | What happened (1.9.0): purchase, topup, hold, hold_release, spend, refund, gateway_refund, admin_adjust, expiry |
+| reference | VARCHAR(191) | Order / session / event / lot id (1.9.0) |
+| hold_id | BIGINT UNSIGNED | The hold a settle or release row closes (1.9.0) |
+| created_at | DATETIME | UTC, written by PHP |
 
 **Balance = SUM(amount) WHERE user_id = X**
 
-The ledger is append-only. The only DELETE operation is `cancel_hold()` for unconsumed holds.
+The ledger is append-only. The only DELETE is cancelling a hold that is still open. Columns and indexes added in later versions are added to existing tables on upgrade (`Ledger::maybe_upgrade()`).
 
 ### Schema contract (since 1.3.0)
 

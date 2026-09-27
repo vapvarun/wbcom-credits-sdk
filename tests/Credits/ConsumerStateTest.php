@@ -248,5 +248,31 @@ namespace Wbcom\Credits\Tests\Credits {
 			$this->assertTrue( $c->reprice_item( self::ITEM ) );
 			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ) );
 		}
+		public function test_reprice_a_held_item_down_holds_the_new_price(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 20;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+
+			self::$price = 5;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$this->assertSame( 25.0, Credits::balance_money( self::SLUG, self::USER ) );
+
+			$c->settle_item( self::ITEM );
+			$this->assertSame( 25.0, Credits::balance_money( self::SLUG, self::USER ), 'Settles the 5 held, nothing more.' );
+			$this->assertSame( array(), Ledger::open_holds( 'cst', self::USER, self::ITEM ) );
+		}
+
+		public function test_a_hold_from_before_1_9_settles_once(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			// A 1.8 hold: no reason on the row.
+			Ledger::insert( 'cst', self::USER, 'hold', -1000, self::ITEM, 'old hold' );
+			$this->consumer()->set_state( self::ITEM, 'held', 10 );
+
+			$this->assertTrue( $this->consumer()->settle_item( self::ITEM ) );
+			$this->assertTrue( $this->consumer()->settle_item( self::ITEM ) );
+
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ), 'Charged the 10.00 held, once.' );
+		}
 	}
 }

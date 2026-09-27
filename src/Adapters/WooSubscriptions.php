@@ -158,13 +158,6 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Atomic dedupe: claim BEFORE crediting. Keyed per order so each
-		// renewal order credits once, but a duplicate delivery of the same
-		// order (initial+renewal hook overlap, or concurrent IPNs) loses the
-		// claim and exits.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woosub:order:' . $order_id ) ) {
-			return;
-		}
 
 		$registry      = $this->get_registry();
 		$total_credits = 0;
@@ -187,7 +180,7 @@ final class WooSubscriptionsAdapter implements AdapterInterface {
 				$order_id
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
+			\Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'woosub:order:' . $order_id, $user_id, $total_credits, $note );
 		}
 
 		// Legacy marker for support / reconciliation only; no longer the guard.

@@ -95,7 +95,7 @@ final class Expiry {
 					$remaining = self::remaining( (int) $lot['amount'], Credits::get_balance( $slug, $user_id ), $newer );
 
 					// A zero row still marks the lot done.
-					Ledger::insert( (string) $config['prefix'], $user_id, 'expiry', -$remaining, (int) $lot['id'], sprintf( 'Credits expired (lot #%d)', (int) $lot['id'] ) );
+					Ledger::insert( (string) $config['prefix'], $user_id, 'expiry', -$remaining, (int) $lot['id'], sprintf( 'Credits expired (lot #%d)', (int) $lot['id'] ), null, 'expiry', 'lot:' . (int) $lot['id'] );
 					Credits::forget_balance( $slug, $user_id );
 
 					if ( $remaining > 0 ) {

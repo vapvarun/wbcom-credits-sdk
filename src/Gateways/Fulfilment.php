@@ -48,10 +48,14 @@ final class Fulfilment {
 
 		// Money consumers store MINOR units; a credit count is a MAJOR-unit
 		// amount by definition (single-boundary rule, 1.5.1).
+		// Credit and log together: joins the caller's transaction (the
+		// gateway's claim), or is its own for a free order.
+		\Wbcom\Credits\Ledger::begin();
 		$ledger_id = Credits::is_money( $slug )
-			? Credits::topup_money( $slug, $user_id, $credits, '', $note, $expires )
-			: Credits::topup( $slug, $user_id, $credits, $note, $expires );
+			? Credits::topup_money( $slug, $user_id, $credits, '', $note, $expires, 'purchase', $note )
+			: Credits::topup( $slug, $user_id, $credits, $note, $expires, 'purchase', $note );
 		if ( false === $ledger_id ) {
+			\Wbcom\Credits\Ledger::rollback();
 			return null;
 		}
 
@@ -74,6 +78,7 @@ final class Fulfilment {
 				'billing'        => (array) ( $order['billing'] ?? array() ),
 			)
 		);
+		\Wbcom\Credits\Ledger::commit();
 
 		/**
 		 * Fires after a successful gateway top-up.

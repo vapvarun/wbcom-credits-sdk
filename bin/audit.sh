@@ -217,12 +217,15 @@ if [ -f "$SNAPSHOT_FILE" ]; then
     if diff -q "$SNAPSHOT_FILE" "$TMP_SNAPSHOT" >/dev/null 2>&1; then
         pass "public API surface unchanged since last snapshot"
     else
-        ADDED="$(diff "$SNAPSHOT_FILE" "$TMP_SNAPSHOT" | grep -cE '^> ' || true)"
-        REMOVED="$(diff "$SNAPSHOT_FILE" "$TMP_SNAPSHOT" | grep -cE '^< ' || true)"
+        # Compare symbol NAMES (file + function/const name), not whole lines:
+        # a moved line or a new optional parameter is not a removal.
+        names() { sed -E 's#:[0-9]+ — .*(function|const)[[:space:]]+([[:alnum:]_]+).*# \2#' "$1" | LC_ALL=C sort -u; }
+        ADDED="$(comm -13 <(names "$SNAPSHOT_FILE") <(names "$TMP_SNAPSHOT") | grep -c . || true)"
+        REMOVED="$(comm -23 <(names "$SNAPSHOT_FILE") <(names "$TMP_SNAPSHOT") | grep -c . || true)"
         # Removals = breaking. Additions = minor bump warranted.
         if [ "$REMOVED" -gt 0 ]; then
             fail "public API surface SHRANK by $REMOVED symbol(s) — breaking change. Run \`mv $TMP_SNAPSHOT $SNAPSHOT_FILE\` after a deliberate major bump."
-            diff "$SNAPSHOT_FILE" "$TMP_SNAPSHOT" | head -30 | sed 's/^/    /'
+            comm -23 <(names "$SNAPSHOT_FILE") <(names "$TMP_SNAPSHOT") | head -30 | sed 's/^/    removed: /'
         else
             pass "public API surface GREW by $ADDED symbol(s) — minor bump warranted (no breaking removals)"
         fi

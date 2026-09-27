@@ -22,6 +22,7 @@ namespace Wbcom\Credits\Gateways;
 defined( 'ABSPATH' ) || exit;
 
 use Wbcom\Credits\Credits;
+use Wbcom\Credits\Ledger;
 
 /**
  * Shared base for every gateway implementation.
@@ -54,36 +55,43 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		// the gateway is responsible for not emitting creditable events
 		// without an id. We let them through here so a provider that omits
 		// the id on an otherwise-valid event is not silently dropped.
-		if ( '' !== $event->event_id && ! Idempotency::mark_processed( $slug, $this->get_id(), $event->event_id ) ) {
-			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
-		}
-
-		switch ( $event->type ) {
-			case Gateway_Event::TYPE_CHECKOUT_COMPLETED:
-				$response = $this->process_checkout_completed( $slug, $event );
-				break;
-
-			case Gateway_Event::TYPE_REFUND:
-				$response = $this->process_refund( $slug, $event );
-				break;
-
-			default:
-				$response = null;
-		}
-
-		if ( null !== $response ) {
-			// The claim above is taken before crediting so duplicates cannot
-			// double-credit. If crediting then FAILED (unknown or mismatched
-			// session, top-up error), keeping the claim turned every provider
-			// retry into a "duplicate" and the paid session was never credited.
-			// Give the claim back so the retry can succeed.
-			if ( $response->get_status() >= 400 && '' !== $event->event_id ) {
-				Idempotency::release( $slug, $this->get_id(), $event->event_id );
+		// The claim and everything it guards are one transaction (1.9.0).
+		// Before, the claim was committed on its own: a fatal error or a
+		// timeout between it and the ledger write kept the claim and lost
+		// the credit, and the provider's retry was then a "duplicate".
+		Ledger::begin();
+		try {
+			if ( '' !== $event->event_id && ! Idempotency::mark_processed( $slug, $this->get_id(), $event->event_id ) ) {
+				Ledger::commit();
+				return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 			}
+
+			switch ( $event->type ) {
+				case Gateway_Event::TYPE_CHECKOUT_COMPLETED:
+					$response = $this->process_checkout_completed( $slug, $event );
+					break;
+
+				case Gateway_Event::TYPE_REFUND:
+					$response = $this->process_refund( $slug, $event );
+					break;
+
+				default:
+					$response = null;
+			}
+		} catch ( \Throwable $e ) {
+			Ledger::rollback();
+			throw $e;
+		}
+
+		// A failed event (unknown or mismatched session, top-up error) rolls
+		// back its claim, so the provider's retry can succeed.
+		if ( null !== $response && $response->get_status() >= 400 ) {
+			Ledger::rollback();
 			return $response;
 		}
+		Ledger::commit();
 
-		return new \WP_REST_Response( array( 'received' => true, 'unhandled' => $event->type ), 200 );
+		return $response ?? new \WP_REST_Response( array( 'received' => true, 'unhandled' => $event->type ), 200 );
 	}
 
 	/**
@@ -117,7 +125,11 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		// both paths contend on. Exactly one caller wins and credits; the
 		// loser acks as a duplicate. Same atomic INSERT IGNORE mechanism as
 		// the event claim.
+		// Claim, credit and log in one transaction (joins the webhook's when
+		// called from there): a crash in between leaves nothing claimed.
+		Ledger::begin();
 		if ( ! Idempotency::mark_processed( $slug, $this->get_id(), 'session:' . $event->session_id ) ) {
+			Ledger::commit();
 			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 		}
 
@@ -134,11 +146,12 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			$event->currency
 		);
 		if ( null === $credited ) {
-			// Nothing was credited: release the session claim so the webhook
-			// retry or the buyer's return can credit it.
-			Idempotency::release( $slug, $this->get_id(), 'session:' . $event->session_id );
+			// Nothing was credited: roll the session claim back so the
+			// webhook retry or the buyer's return can credit it.
+			Ledger::rollback();
 			return new \WP_REST_Response( array( 'error' => 'topup_failed' ), 500 );
 		}
+		Ledger::commit();
 		$ledger_id = $credited['ledger_id'];
 
 		Pending_Checkouts::forget( $slug, $event->session_id );
@@ -195,8 +208,15 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			return new \WP_REST_Response( array( 'received' => true, 'noop' => 'already_fully_refunded' ), 200 );
 		}
 
-		$credits_to_revoke = $orig_amount > 0
-			? (int) floor( $orig_credits * $refund_amount / $orig_amount )
+		// Work in LEDGER units throughout (minor units for a money consumer):
+		// prorating a major-unit credit count floored away the cents, so a
+		// third of a 10.00 purchase revoked 3.00 instead of 3.33.
+		$is_money     = Credits::is_money( $slug );
+		$orig_ledger  = $is_money
+			? \Wbcom\Credits\Money::to_minor( $orig_credits, Credits::resolve_money_currency( $slug ) )
+			: $orig_credits;
+		$ledger_to_revoke = $orig_amount > 0
+			? (int) floor( $orig_ledger * $refund_amount / $orig_amount )
 			: 0;
 
 		// A refund can only take back what the buyer has not already spent. The
@@ -207,22 +227,19 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		// refund the buyer's unspent balance at the provider; this cap is the
 		// SDK-side safety net, not the primary enforcement - it should not fire
 		// in the normal case.
-		if ( $credits_to_revoke > 0 ) {
-			$is_money = Credits::is_money( $slug );
-			$unspent  = $is_money
-				? (int) floor( Credits::balance_money( $slug, (int) $parent['user_id'] ) )
-				: Credits::get_balance( $slug, (int) $parent['user_id'] );
-			$credits_to_revoke = max( 0, min( $credits_to_revoke, $unspent ) );
+		if ( $ledger_to_revoke > 0 ) {
+			$ledger_to_revoke = max( 0, min( $ledger_to_revoke, Credits::get_balance( $slug, (int) $parent['user_id'] ) ) );
 		}
 
+		// The credit count the gateway hooks and the log have always carried.
+		$credits_to_revoke = $is_money
+			? (int) floor( \Wbcom\Credits\Money::to_major( $ledger_to_revoke, Credits::resolve_money_currency( $slug ) ) )
+			: $ledger_to_revoke;
+
 		$ledger_id = 0;
-		if ( $credits_to_revoke > 0 ) {
-			// Same money-mode boundary as the topup above: a credit count is
-			// a MAJOR-unit amount on money consumers.
+		if ( $ledger_to_revoke > 0 ) {
 			$refund_note = sprintf( 'gateway:%s:refund:%s', $this->get_id(), $event->session_id );
-			$ledger_id   = Credits::is_money( $slug )
-				? Credits::adjust_money( $slug, (int) $parent['user_id'], -$credits_to_revoke, '', $refund_note )
-				: Credits::adjust( $slug, (int) $parent['user_id'], -$credits_to_revoke, $refund_note );
+			$ledger_id   = Credits::adjust( $slug, (int) $parent['user_id'], -$ledger_to_revoke, $refund_note, 'gateway_refund', $refund_note );
 			if ( false === $ledger_id ) {
 				return new \WP_REST_Response( array( 'error' => 'refund_adjust_failed' ), 500 );
 			}
@@ -260,7 +277,7 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		// to a ledger row / listing and reverse the right perk. The 4th arg is
 		// additive — existing 3-arg listeners keep working — but note the 3rd
 		// arg is now the amount, not item_id (item_id moved into $context).
-		if ( $credits_to_revoke > 0 ) {
+		if ( $ledger_to_revoke > 0 ) {
 			$context = array(
 				'gateway'      => $this->get_id(),
 				'session_id'   => $event->session_id,
@@ -284,13 +301,8 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			 *                                       provider_ref, ledger_id, reason, item_id.
 			 */
 			// Arg 3 is in LEDGER units, as Credits::refund() sends it: minor
-			// units for a money consumer. $credits_to_revoke is a credit count
-			// (major), so a money consumer's bridge read a 100-credit refund as
-			// 1 credit.
-			$event_amount = Credits::is_money( $slug )
-				? \Wbcom\Credits\Money::to_minor( $credits_to_revoke, Credits::resolve_money_currency( $slug ) )
-				: $credits_to_revoke;
-			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $event_amount, $context );
+			// units for a money consumer.
+			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $ledger_to_revoke, $context );
 		}
 
 		/**

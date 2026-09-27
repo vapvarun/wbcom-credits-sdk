@@ -287,11 +287,17 @@ final class Registry {
 	 *       the v2 bug (version=2, no payment_intent column) get the column +
 	 *       idx_intent index added. The backfill is a no-op where they already
 	 *       exist (fresh installs), so bumping the version is safe for everyone.
+	 *  - 4, 5: 1.9.0 development builds (ledger expiry column and item
+	 *       indexes; gateway-log billing, discount and tax columns).
+	 *  - 6: 1.9.0 release. Ledger `reason`, `reference`, `hold_id` and their
+	 *       keys on top of 4 and 5. Ledger::maybe_create_table() now always
+	 *       runs Ledger::maybe_upgrade(), which adds each piece only when
+	 *       missing, so sites on a development build catch up too.
 	 *
 	 * @since 1.3.1
 	 * @var int
 	 */
-	private const SCHEMA_VERSION = 5;
+	private const SCHEMA_VERSION = 6;
 
 	/**
 	 * Create or upgrade the per-consumer schema, guarded by a stored
@@ -320,7 +326,6 @@ final class Registry {
 
 		// Append-only ledger (canonical balance source).
 		Ledger::maybe_create_table( $prefix );
-		Ledger::maybe_upgrade( $prefix );
 
 		// Per-gateway transaction log for direct payments.
 		Gateways\Transaction_Log::maybe_create_table( $prefix );

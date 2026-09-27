@@ -162,12 +162,14 @@ final class Credits {
 	 * @param int    $amount  Positive credits to add.
 	 * @param string      $note       Human-readable note.
 	 * @param string|null $expires_at UTC 'Y-m-d H:i:s' when these credits lapse, null for never (since 1.9.0).
+	 * @param string      $reason     What happened (since 1.9.0): 'topup' (default) or 'purchase'.
+	 * @param string      $reference  Order / session the credits came from (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null ): int|false {
+	public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false {
 		self::invalidate_cache( $slug, $user_id );
 
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), 0, $note, $expires_at );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), 0, $note, $expires_at, $reason, $reference );
 
 		if ( $result ) {
 			/**
@@ -188,7 +190,11 @@ final class Credits {
 	}
 
 	/**
-	 * Place a hold (reserve credits) on an item.
+	 * Place a hold (reserve credits) on an item, without checking the balance.
+	 *
+	 * Prefer {@see try_hold()}, which checks the balance under the user's
+	 * lock. Use this only where an overdraft is intended, or inside
+	 * {@see with_user_lock()} after your own check.
 	 *
 	 * @since 1.0.0
 	 *
@@ -203,7 +209,7 @@ final class Credits {
 		self::invalidate_cache( $slug, $user_id );
 
 		$note   = $note ?: 'Credits held';
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'hold', -abs( $amount ), $item_id, $note );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'hold', -abs( $amount ), $item_id, $note, null, 'hold' );
 
 		if ( $result ) {
 			/**
@@ -226,9 +232,14 @@ final class Credits {
 	}
 
 	/**
-	 * Convert an existing hold into a permanent deduction.
+	 * Convert the open hold on an item into a permanent deduction.
+	 *
+	 * Returns false when the item has no open hold (before 1.9.0 it
+	 * "succeeded" and charged nothing). Prefer {@see settle_hold()} with the
+	 * id hold() returned.
 	 *
 	 * @since 1.0.0
+	 * @since 1.9.0 Settles an open hold only.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
@@ -262,9 +273,11 @@ final class Credits {
 	}
 
 	/**
-	 * Refund held credits.
+	 * Refund held credits: release the item's open hold, or, with none open,
+	 * give the amount back as a refund.
 	 *
 	 * @since 1.0.0
+	 * @since 1.9.0 Releases the open hold (its own amount) when there is one.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
@@ -276,14 +289,31 @@ final class Credits {
 	public static function refund( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false {
 		self::invalidate_cache( $slug, $user_id );
 
-		$note = $note ?: 'Credits refunded';
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'refund', abs( $amount ), $item_id, $note );
+		$note   = $note ?: 'Credits refunded';
+		$prefix = self::get_prefix( $slug );
+
+		// Releasing the item's open hold is what this call has always been
+		// for; with none open it gives the amount back as a plain refund.
+		$open   = $item_id > 0 ? Ledger::open_holds( $prefix, $user_id, $item_id ) : array();
+		$result = false;
+		if ( $open ) {
+			$release = Ledger::release( $prefix, $user_id, (int) $open[0]->id, $note );
+			if ( false !== $release ) {
+				$result = $release['id'];
+				$amount = $release['amount'];
+			}
+		}
+		if ( false === $result ) {
+			$result = Ledger::insert( $prefix, $user_id, 'refund', abs( $amount ), $item_id, $note, null, 'refund' );
+		}
 
 		if ( $result ) {
 			$context = array(
 				'item_id'   => $item_id,
 				'ledger_id' => (int) $result,
 				'note'      => $note,
+				// The event's reason stays 'hold_refund' for every call, as
+				// listeners expect; the ledger row's reason says which it was.
 				'reason'    => 'hold_refund',
 			);
 			/**
@@ -312,9 +342,14 @@ final class Credits {
 	}
 
 	/**
-	 * Cancel an unconsumed hold (physical delete).
+	 * Cancel the open holds on an item (physical delete).
+	 *
+	 * Settled and released holds are never touched (before 1.9.0 they were
+	 * deleted too, silently reversing the charge). Prefer
+	 * {@see cancel_hold_by_id()}.
 	 *
 	 * @since 1.0.0
+	 * @since 1.9.0 Open holds only.
 	 *
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
@@ -334,16 +369,18 @@ final class Credits {
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
 	 * @param int    $amount  Signed integer (positive = add, negative = remove).
-	 * @param string $note    Admin note.
+	 * @param string $note      Admin note.
+	 * @param string $reason    What happened (since 1.9.0): 'admin_adjust' (default) or 'gateway_refund'.
+	 * @param string $reference Order / session it relates to (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function adjust( string $slug, int $user_id, int $amount, string $note = '' ): int|false {
+	public static function adjust( string $slug, int $user_id, int $amount, string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false {
 		self::invalidate_cache( $slug, $user_id );
 
 		$entry_type = $amount >= 0 ? 'topup' : 'deduction';
 		$note       = $note ?: 'Admin adjustment';
 
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, $entry_type, $amount, 0, $note );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, $entry_type, $amount, 0, $note, null, $reason, $reference );
 
 		if ( $result ) {
 			/**
@@ -378,24 +415,237 @@ final class Credits {
 	 * @param string   $slug    Plugin slug.
 	 * @param int      $user_id WordPress user ID.
 	 * @param callable $fn      Work to do under the lock.
-	 * @return mixed What $fn returned, or false when the lock could not be taken within 10 seconds.
+	 * @return mixed What $fn returned, or false when the lock could not be taken
+	 *               (10 seconds by default, filter `wbcom_credits_lock_timeout`).
+	 *               Re-entrant: nested calls for the same user run straight away.
 	 */
 	public static function with_user_lock( string $slug, int $user_id, callable $fn ): mixed {
-		global $wpdb;
+		return Ledger::with_user_lock(
+			self::get_prefix( $slug ),
+			$user_id,
+			static function () use ( $slug, $user_id, $fn ) {
+				self::invalidate_cache( $slug, $user_id );
+				return $fn();
+			}
+		);
+	}
 
-		$name = 'wbcom_credits_' . self::get_prefix( $slug ) . '_' . $user_id;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		if ( 1 !== (int) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, %d )', $name, 10 ) ) ) {
+	/**
+	 * Credit a purchase exactly once: claim the event and top up in one
+	 * transaction.
+	 *
+	 * The adapters used to claim first and top up afterwards, as two
+	 * writes: a fatal error between them kept the claim and lost the
+	 * credit, and every retry was then a duplicate. Now either both land
+	 * or neither does.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug     Plugin slug.
+	 * @param string $source   Claim namespace, e.g. 'adapter:woocommerce'.
+	 * @param string $event_id Stable id of the payment, e.g. 'woo:order:123'. Also stored as the row's reference.
+	 * @param int    $user_id  WordPress user ID.
+	 * @param int    $amount   Ledger units to credit (positive).
+	 * @param string $note     Description.
+	 * @return int|false|null Row id; null when the event was already credited; false when the write failed.
+	 */
+	public static function topup_once( string $slug, string $source, string $event_id, int $user_id, int $amount, string $note = '' ): int|false|null {
+		Ledger::begin();
+		if ( ! Gateways\Processed_Events::claim( $slug, $source, $event_id ) ) {
+			Ledger::commit();
+			return null;
+		}
+
+		$id = self::topup( $slug, $user_id, $amount, $note, null, 'purchase', $event_id );
+		if ( false === $id ) {
+			Ledger::rollback();
+			return false;
+		}
+		Ledger::commit();
+
+		return $id;
+	}
+
+	/**
+	 * Place a hold only if the balance covers it, atomically.
+	 *
+	 * The balance is read from the ledger (not the request cache) under the
+	 * user's lock, so two requests cannot both pass the check and overdraw.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $amount  Amount to reserve, ledger units (positive).
+	 * @param int    $item_id Associated item ID.
+	 * @param string $note    Description.
+	 * @return int|false The hold id, or false when the balance is short (or the lock timed out).
+	 */
+	public static function try_hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false {
+		$amount = abs( $amount );
+
+		return self::with_user_lock(
+			$slug,
+			$user_id,
+			static function () use ( $slug, $user_id, $amount, $item_id, $note ) {
+				if ( self::get_balance( $slug, $user_id ) < $amount ) {
+					return false;
+				}
+				return self::hold( $slug, $user_id, $amount, $item_id, $note );
+			}
+		);
+	}
+
+	/**
+	 * Charge immediately if the balance covers it, atomically.
+	 *
+	 * For consumers that charge per event (an impression, a click, a
+	 * renewal) with no approval step. Same lock and uncached check as
+	 * {@see try_hold()}. Fires `wbcom_credits_deducted` with item_id.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug      Plugin slug.
+	 * @param int    $user_id   WordPress user ID.
+	 * @param int    $amount    Amount to charge, ledger units (positive).
+	 * @param int    $item_id   Associated item ID (0 if none).
+	 * @param string $note      Description.
+	 * @param string $reference Optional reference.
+	 * @param bool   $allow_overdraft Charge even when the balance is short.
+	 * @return int|false The spend row id, or false when the balance is short (or the lock timed out).
+	 */
+	public static function spend( string $slug, int $user_id, int $amount, int $item_id = 0, string $note = '', string $reference = '', bool $allow_overdraft = false ): int|false {
+		$amount = abs( $amount );
+		$prefix = self::get_prefix( $slug );
+
+		$result = self::with_user_lock(
+			$slug,
+			$user_id,
+			static function () use ( $slug, $prefix, $user_id, $amount, $item_id, $note, $reference, $allow_overdraft ) {
+				if ( ! $allow_overdraft && self::get_balance( $slug, $user_id ) < $amount ) {
+					return false;
+				}
+				$id = Ledger::insert( $prefix, $user_id, 'deduction', -$amount, $item_id, $note ?: 'Credits spent', null, 'spend', $reference );
+				self::invalidate_cache( $slug, $user_id );
+				return $id;
+			}
+		);
+
+		if ( $result ) {
+			/** This action is documented in src/Credits.php (deduct). */
+			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
+			self::maybe_fire_low_balance( $slug, $user_id );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Settle one hold by the id hold()/try_hold() returned.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $hold_id Hold row id.
+	 * @param int    $amount  Amount to spend, ledger units; 0 spends what was held.
+	 * @param string $note    Description.
+	 * @return int|false The spend row id, or false when the hold is not open.
+	 */
+	public static function settle_hold( string $slug, int $user_id, int $hold_id, int $amount = 0, string $note = '' ): int|false {
+		self::invalidate_cache( $slug, $user_id );
+
+		$prefix = self::get_prefix( $slug );
+		$hold   = Ledger::find_open_hold( $prefix, $user_id, $hold_id );
+		$result = null === $hold ? false : Ledger::settle( $prefix, $user_id, $hold_id, abs( $amount ), $note );
+
+		if ( $result && null !== $hold ) {
+			/** This action is documented in src/Credits.php (deduct). */
+			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount > 0 ? abs( $amount ) : abs( (int) $hold->amount ), (int) $hold->item_id );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Release one hold back to the balance, by id.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug    Plugin slug.
+	 * @param int    $user_id WordPress user ID.
+	 * @param int    $hold_id Hold row id.
+	 * @param string $note    Description.
+	 * @return int|false The release row id, or false when the hold is not open.
+	 */
+	public static function release_hold( string $slug, int $user_id, int $hold_id, string $note = '' ): int|false {
+		self::invalidate_cache( $slug, $user_id );
+
+		$release = Ledger::release( self::get_prefix( $slug ), $user_id, $hold_id, $note );
+		if ( false === $release ) {
 			return false;
 		}
 
-		self::invalidate_cache( $slug, $user_id );
-		try {
-			return $fn();
-		} finally {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) );
-		}
+		/** This action is documented in src/Credits.php (refund). */
+		do_action(
+			'wbcom_credits_refunded',
+			$slug,
+			$user_id,
+			$release['amount'],
+			array(
+				'item_id'   => $release['item_id'],
+				'ledger_id' => $release['id'],
+				'note'      => $note,
+				'reason'    => 'hold_refund',
+			)
+		);
+
+		return $release['id'];
+	}
+
+	/**
+	 * Ledger rows for reports and admin screens.
+	 *
+	 * Filters: user_id, item_id, entry_type, reason (string or list),
+	 * reference, hold_id, since / until (UTC 'Y-m-d H:i:s'; convert a
+	 * site-time range with get_gmt_from_date() first). Paging: limit
+	 * (max 500), offset, order. Consumers use this instead of querying
+	 * the ledger table.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string              $slug Plugin slug.
+	 * @param array<string,mixed> $args Filters and paging.
+	 * @return array<int, object> Rows: id, user_id, item_id, entry_type, amount, note, reason, reference, hold_id, created_at (UTC).
+	 */
+	public static function query_ledger( string $slug, array $args = array() ): array {
+		return (array) Ledger::query( self::get_prefix( $slug ), $args, 'rows' );
+	}
+
+	/**
+	 * How many ledger rows match query_ledger() filters.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string              $slug Plugin slug.
+	 * @param array<string,mixed> $args Filters.
+	 * @return int
+	 */
+	public static function count_ledger_rows( string $slug, array $args = array() ): int {
+		return (int) Ledger::query( self::get_prefix( $slug ), $args, 'count' );
+	}
+
+	/**
+	 * Total amount (ledger units, signed) of rows matching query_ledger() filters.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string              $slug Plugin slug.
+	 * @param array<string,mixed> $args Filters.
+	 * @return int
+	 */
+	public static function sum_ledger( string $slug, array $args = array() ): int {
+		return (int) Ledger::query( self::get_prefix( $slug ), $args, 'sum' );
 	}
 
 	// -------------------------------------------------------------------------
@@ -723,10 +973,12 @@ final class Credits {
 	 * @param string           $currency Optional ISO 4217 code; falls back to the consumer's money.currency.
 	 * @param string           $note     Description.
 	 * @param string|null      $expires_at UTC 'Y-m-d H:i:s' when these credits lapse (since 1.9.0).
+	 * @param string           $reason     See topup() (since 1.9.0).
+	 * @param string           $reference  See topup() (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', ?string $expires_at = null ): int|false {
-		return self::topup( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $note, $expires_at );
+	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false {
+		return self::topup( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $note, $expires_at, $reason, $reference );
 	}
 
 	/**
@@ -789,14 +1041,16 @@ final class Credits {
 	 * @param int              $user_id  WordPress user ID.
 	 * @param float|int|string $amount   Signed amount in major units.
 	 * @param string           $currency Optional ISO 4217 code.
-	 * @param string           $note     Description.
+	 * @param string           $note      Description.
+	 * @param string           $reason    See adjust() (since 1.9.0).
+	 * @param string           $reference See adjust() (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
+	public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false {
 		$currency_code = self::resolve_money_currency( $slug, $currency );
 		$sign          = ( (float) $amount < 0 ) ? -1 : 1;
 		$minor         = $sign * Money::to_minor( abs( (float) $amount ), $currency_code );
-		return self::adjust( $slug, $user_id, $minor, $note );
+		return self::adjust( $slug, $user_id, $minor, $note, $reason, $reference );
 	}
 
 	/**
@@ -903,7 +1157,13 @@ final class Credits {
 	 */
 	private static function maybe_fire_low_balance( string $slug, int $user_id ): void {
 		$config    = Registry::instance()->get( $slug );
-		$threshold = (int) ( $config['settings']['low_threshold'] ?? 5 );
+		$threshold = $config['settings']['low_threshold'] ?? 5;
+
+		// The setting is what an owner types: credits, or for a money
+		// consumer an amount of money (5 = 5.00, not 5 cents).
+		$threshold = self::is_money( $slug )
+			? Money::to_minor( $threshold, self::resolve_money_currency( $slug ) )
+			: (int) $threshold;
 		$balance   = self::get_balance( $slug, $user_id );
 		$flag      = '_wbcom_credits_low_' . sanitize_key( $slug );
 

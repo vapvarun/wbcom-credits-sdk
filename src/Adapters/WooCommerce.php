@@ -217,14 +217,6 @@ final class WooCommerceAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Atomic dedupe: claim BEFORE crediting. A stable per-order event id
-		// keyed under this adapter's slug + an adapter-tagged gateway means a
-		// second delivery of the same order (or the processing→completed pair)
-		// loses the claim and exits without crediting again.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woo:order:' . $order_id ) ) {
-			return;
-		}
-
 		$registry      = $this->get_registry();
 		$total_credits = 0;
 
@@ -245,7 +237,13 @@ final class WooCommerceAdapter implements AdapterInterface {
 				$order_id
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $total_credits, $note );
+			// Claim and credit in one transaction. A stable per-order event
+			// id means a second delivery of the same order (or the
+			// processing→completed pair) finds it claimed and credits nothing.
+			$credited = \Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'woo:order:' . $order_id, $user_id, $total_credits, $note );
+			if ( ! $credited ) {
+				return;
+			}
 
 			// What this order granted, in ledger units, so a refund revokes
 			// exactly that even if the mapping changes later.
@@ -253,8 +251,8 @@ final class WooCommerceAdapter implements AdapterInterface {
 		}
 
 		// Keep the legacy meta flag as a human-readable marker for support /
-		// reconciliation. It is NO LONGER the dedupe guard — the atomic claim
-		// above is — so a save() failure here cannot cause a double top-up.
+		// reconciliation. It is NO LONGER the dedupe guard - the claim inside
+		// topup_once() is - so a save() failure here cannot cause a double top-up.
 		$order->update_meta_data( '_wbcom_credits_processed', '1' );
 		$order->save();
 	}
@@ -368,7 +366,7 @@ final class WooCommerceAdapter implements AdapterInterface {
 
 		$ledger_id = 0;
 		if ( $taken > 0 ) {
-			$ledger_id = \Wbcom\Credits\Credits::adjust( $this->slug, $user_id, -$taken, $note );
+			$ledger_id = \Wbcom\Credits\Credits::adjust( $this->slug, $user_id, -$taken, $note, 'gateway_refund', $provider_ref );
 			if ( false === $ledger_id ) {
 				return;
 			}
