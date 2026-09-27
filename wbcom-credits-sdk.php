@@ -108,6 +108,17 @@ if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
 			'Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => '/src/Gateways/Admin_Form_Renderer.php',
 			'Wbcom\\Credits\\Gateways\\Pricing'                 => '/src/Gateways/Pricing.php',
 			'Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => '/src/Gateways/Pack_Admin_Renderer.php',
+			'Wbcom\\Credits\\Gateways\\PricingException'        => '/src/Gateways/Pricing.php',
+			'Wbcom\\Credits\\Gateways\\Checkout_Settings'       => '/src/Gateways/Checkout_Settings.php',
+			'Wbcom\\Credits\\Gateways\\Coupons'                 => '/src/Gateways/Coupons.php',
+			'Wbcom\\Credits\\Gateways\\Order'                   => '/src/Gateways/Order.php',
+			'Wbcom\\Credits\\Gateways\\Fulfilment'              => '/src/Gateways/Fulfilment.php',
+			'Wbcom\\Credits\\Gateways\\Reconciler'              => '/src/Gateways/Reconciler.php',
+			'Wbcom\\Credits\\Support\\Currencies'               => '/src/Support/Currencies.php',
+			'Wbcom\\Credits\\Support\\Countries'                => '/src/Support/Countries.php',
+			'Wbcom\\Credits\\Billing'                           => '/src/Billing.php',
+			'Wbcom\\Credits\\Receipt'                           => '/src/Receipt.php',
+			'Wbcom\\Credits\\Expiry'                            => '/src/Expiry.php',
 		);
 	}
 
