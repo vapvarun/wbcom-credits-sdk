@@ -281,4 +281,43 @@ final class LedgerIntegrityTest extends TestCase {
 		$this->assertSame( 2, Credits::count_ledger_rows( self::SLUG, array( 'user_id' => self::USER, 'since' => '2026-06-01 00:00:00' ) ) );
 		$this->assertSame( 1, Credits::count_ledger_rows( self::SLUG, array( 'until' => '2026-06-01 00:00:00' ) ) );
 	}
+
+	// 1.9.1 -------------------------------------------------------------
+
+	public function test_balance_inside_the_lock_is_live_and_locking(): void {
+		global $wpdb;
+		Credits::get_balance( self::SLUG, self::USER ); // Cached at 100.
+
+		$seen = Credits::with_user_lock(
+			self::SLUG,
+			self::USER,
+			static function () use ( $wpdb ) {
+				// Another request's charge, written without touching our cache.
+				Ledger::insert( self::PREFIX, self::USER, 'deduction', -40, 0, 'elsewhere', null, 'spend' );
+				$wpdb->reads = array();
+				return Credits::get_balance( self::SLUG, self::USER );
+			}
+		);
+
+		$this->assertSame( 60, $seen );
+		$this->assertStringContainsString( 'FOR UPDATE', implode( "\n", $wpdb->reads ) );
+		$this->assertFalse( Ledger::in_user_lock( self::PREFIX, self::USER ), 'Released after.' );
+	}
+
+	public function test_balance_outside_the_lock_is_a_plain_read(): void {
+		global $wpdb;
+		$wpdb->reads = array();
+		Credits::invalidate_cache( self::SLUG, self::USER );
+		Credits::get_balance( self::SLUG, self::USER );
+
+		$this->assertStringNotContainsString( 'FOR UPDATE', implode( "\n", $wpdb->reads ) );
+	}
+
+	public function test_topup_can_link_an_item(): void {
+		Credits::topup( self::SLUG, self::USER, 5, 'refund of ad 77', null, 'refund', 'ad:77', 77 );
+
+		$last = array_values( array_slice( $this->rows(), -1 ) )[0];
+		$this->assertSame( 77, (int) $last['item_id'] );
+		$this->assertSame( 'refund', $last['reason'] );
+	}
 }

@@ -42,11 +42,15 @@ final class Credits {
 	 * @return int Balance.
 	 */
 	public static function get_balance( string $slug, int $user_id ): int {
-		if ( isset( self::$balance_cache[ $slug ][ $user_id ] ) ) {
+		// Under the user's lock the balance is read live (and locking) every
+		// time: a spend decision must never come from the request cache.
+		$prefix = self::get_prefix( $slug );
+		$locked = Ledger::in_user_lock( $prefix, $user_id );
+
+		if ( ! $locked && isset( self::$balance_cache[ $slug ][ $user_id ] ) ) {
 			return self::$balance_cache[ $slug ][ $user_id ];
 		}
 
-		$prefix  = self::get_prefix( $slug );
 		$balance = Ledger::get_balance( $prefix, $user_id );
 
 		/**
@@ -60,7 +64,9 @@ final class Credits {
 		 */
 		$balance = (int) apply_filters( 'wbcom_credits_balance', $balance, $slug, $user_id );
 
-		self::$balance_cache[ $slug ][ $user_id ] = $balance;
+		if ( ! $locked ) {
+			self::$balance_cache[ $slug ][ $user_id ] = $balance;
+		}
 
 		return $balance;
 	}
@@ -164,12 +170,13 @@ final class Credits {
 	 * @param string|null $expires_at UTC 'Y-m-d H:i:s' when these credits lapse, null for never (since 1.9.0).
 	 * @param string      $reason     What happened (since 1.9.0): 'topup' (default) or 'purchase'.
 	 * @param string      $reference  Order / session the credits came from (since 1.9.0).
+	 * @param int         $item_id    Item the credits relate to, e.g. a refunded ad (since 1.9.1).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false {
+	public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '', int $item_id = 0 ): int|false {
 		self::invalidate_cache( $slug, $user_id );
 
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), 0, $note, $expires_at, $reason, $reference );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), $item_id, $note, $expires_at, $reason, $reference );
 
 		if ( $result ) {
 			/**

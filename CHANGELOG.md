@@ -2,6 +2,19 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] - September 2026
+
+Found while bundling 1.9.0 into WB Ad Manager Pro, which charges inside its own database transactions (memberships, featured listings).
+
+### Fixed
+
+- **A balance read inside the user's lock is live and locking.** `Credits::get_balance()` under `with_user_lock()` (so in `try_hold()`, `spend()`, `Consumer::reserve_item()` and `reprice_item()`) skips the request cache and reads with `FOR UPDATE`. The named lock is released when the SDK call returns, but a caller's own transaction commits later; a plain read in the next request did not see that uncommitted charge and could approve a second spend of the same money. The locking read waits for it.
+
+### Added
+
+- **`Credits::topup()` takes an `$item_id`** (last parameter), for credits that belong to an item, such as a refunded ad.
+- **`Ledger::in_user_lock()`** says whether this request holds the user's lock.
+
 ## [1.9.0] - September 2026
 
 Two lines of work in one release. Spends are serialised per user, consumers can drive an item's charge directly, and checkout gains billing, coupons, tax, receipts, expiry and reconciling (found on WP Career Board Pro: ten parallel posts with credit for one made two jobs and a negative balance; auto-published, resubmitted and re-boarded jobs were free; every rejection refunded again). And the ledger design gaps behind the repeated consumer fixes are closed (`docs/AUDIT-2026-09-27.md`, found on WB Ad Manager Pro): holds are settled by id, every row says what happened, claims and credits land together, and reports read through the API. Additive except where noted under Changed.
