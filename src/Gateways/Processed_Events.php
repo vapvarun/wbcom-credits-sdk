@@ -100,10 +100,11 @@ final class Processed_Events {
 		// this delivery won the race; anything else means it lost.
 		$ok = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prepare(
-				"INSERT IGNORE INTO {$table} (slug, gateway, event_id) VALUES (%s, %s, %s)", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"INSERT IGNORE INTO {$table} (slug, gateway, event_id, created_at) VALUES (%s, %s, %s, %s)", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				sanitize_key( $slug ),
 				sanitize_key( $gateway ),
-				$event_id
+				$event_id,
+				gmdate( 'Y-m-d H:i:s' ) // UTC, see Ledger::insert().
 			)
 		);
 

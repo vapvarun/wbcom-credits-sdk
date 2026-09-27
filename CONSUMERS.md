@@ -23,7 +23,7 @@ into 1.8.0, the first tag since 1.7.0.
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.7.0 → 1.8.0* | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.8.0 → 1.8.1* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.7.0 | none — legacy API only |
