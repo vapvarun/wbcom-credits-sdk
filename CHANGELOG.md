@@ -14,13 +14,27 @@ Spends are serialised per user, and consumers can drive an item's charge directl
 - **`wbcom_credits_adjusted`** action from `Credits::adjust()`.
 - **Ledger schema v4:** `idx_item_id` and `idx_user_item_type (user_id, item_id, entry_type)`, added to existing tables by `Ledger::maybe_add_indexes()`.
 
+- **Checkout: billing, coupons, tax, receipts.** `Billing` keeps the buyer's identity on the user under WooCommerce's `billing_*` keys (plus `billing_gst`), basic or full per slug; the checkout route saves what was typed and refuses an incomplete identity (`400 billing_incomplete` with `fields`). `Gateways\Order::build()` is the one money computation (pack price, coupon, tax, total); the gateway sees only the total and the parts are recorded on the Transaction_Log row (`subtotal_cents`, `discount_cents`, `tax_cents`, `coupon`, `billing` JSON snapshot). `Gateways\Coupons` (percent or amount off, expiry, usage limit counted from paid orders) and `Gateways\Checkout_Settings` (billing mode, tax rate and label, seller name/address/tax id, receipt prefix) each ship an admin renderer and sanitizer. A coupon that covers the whole price credits without a gateway. `Receipt` gives every paid order a printable page (buyer and admins only; theme-overridable template) and the data for a receipt email; `wbcom_credits_purchase_completed` fires once per paid order.
+- **`Gateways\Fulfilment::credit()`** is the one place an order becomes credits, used by webhooks, return claims, the sweep and free orders.
+- **Credit expiry.** A pack can set "credits expire after N days"; top-ups carry `expires_at` (`Credits::topup()` / `topup_money()` take it too) and an hourly sweep (`wbcom_credits_expire_lots`) writes one `expiry` row per lapsed lot for what is left of it (oldest spent first). `wbcom_credits_expired` fires.
+- **Reconcile sweep** (`wbcom_credits_reconcile_checkouts`, hourly) claims pending checkouts at their gateway, so a buyer who closed the tab before returning is still credited; pending entries live 7 days.
+- **`Credits::mapped_offers()`** lists the mapped store items a member can buy, with where to buy each (filter `wbcom_credits_offer_url`).
+- **`Support\Currencies` / `Support\Countries`**: complete ISO 4217 (with real minor units) and ISO 3166 lists, one source for every product (the countries list defers to WooCommerce when active).
+
 ### Changed
 
 - **`wbcom_credits_low` fires once per crossing** (user meta flag, cleared when the balance goes back above the threshold) and on every debit path (hold, deduct, adjust). It fired on every hold at or below the threshold, so a member posting several items got an email per post.
 - **`POST /topup` takes a signed amount.** `absint` turned -3 into +3.
 
+- **`Money` reads decimals from the currency registry**; its partial zero/three-decimal lists are gone. The pack editor's currency is a select from the registry, prices are stored in the currency's own minor units, and the custom-amount rate is entered as a price per credit.
+- **`checkout.js`** sends billing and a coupon, reports missing billing fields, and `wbcomCreditsClaim()` credits a paid checkout on return.
+- **A gateway that can't start a checkout** answers the buyer with a plain message; the provider's detail goes to the debug log.
+
 ### Fixed
 
+- **Zero- and three-decimal currencies.** Pack prices were stored and PayPal amounts sent as `price * 100` / `/ 100`: a JPY 500 pack charged ¥50,000, KWD lost its third decimal.
+- **Delayed Stripe payments** (`checkout.session.async_payment_succeeded`) were never credited.
+- **A paid checkout on a site without a webhook** was never credited: nothing called the claim route on return.
 - `tests/loader-election-check.php` rewrote a literal `'1.7.1'` that stopped existing at 1.8.0, so both fake copies announced the same version and the check failed.
 
 ## [1.8.0] - September 2026

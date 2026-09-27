@@ -447,6 +447,32 @@ Response:
 
 ---
 
+## Checkout: billing, coupons, tax, receipts (since 1.9.0)
+
+The checkout route (`POST /wbcom-credits/v1/{slug}/checkout/{gateway}`) takes
+`billing` (keys from `Billing::fields( $slug )`) and `coupon` next to
+`pack_id` / `credits`. It saves the billing to the user (`billing_*` meta),
+builds the order with `Gateways\Order::build()` (subtotal, coupon discount,
+tax, total) and sends the gateway only the total. The paid order lands on the
+Transaction_Log row with its parts and a billing snapshot.
+
+Render the settings in your own settings card and save them with the
+matching sanitizers:
+
+```php
+\Wbcom\Credits\Gateways\Checkout_Settings::render( 'my-plugin' ); // billing mode, tax, seller, receipt prefix
+\Wbcom\Credits\Gateways\Coupons::render( 'my-plugin' );           // coupon table
+update_option( Checkout_Settings::option_name( 'my-plugin' ), Checkout_Settings::sanitize( $_POST[...] ) );
+update_option( Coupons::option_name( 'my-plugin' ), Coupons::sanitize( $_POST[...] ) );
+```
+
+Send a receipt email on `wbcom_credits_purchase_completed( $slug, $user_id, $log_id )`
+using `Receipt::data( $slug, $log_id )` and link `Receipt::url( $slug, $log_id )`
+(a printable page for the buyer and admins). On your credits screen, call
+`wbcomCreditsClaim( slug )` when the page loads after a gateway return, and
+list what can be bought with `Credits::purchase_paths()` and
+`Credits::mapped_offers()`.
+
 ## Payment Adapters
 
 The SDK includes 5 built-in adapters that automatically top up credits when users purchase products or activate memberships:
