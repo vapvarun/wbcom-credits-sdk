@@ -26,6 +26,12 @@ Bumping the version for every fix is right for a library: consumers can see exac
 
 | Consumer | Release | Frozen at | Since |
 |---|---|---|---|
-| WB Ad Manager Pro | 3.2.0 | 1.9.2 | 2026-10-03 |
+| WB Ad Manager Pro | 3.2.0 | 1.9.4 | 2026-09-28 |
 
 Remove a row when that product release ships.
+
+WB Ad Manager Pro 3.2.0 was first frozen at 1.9.2. It moved to **1.9.4**
+with owner approval (2026-09-28): 1.9.3 fixes a release blocker (a site
+running Pro next to WB Listora's SDK 1.7.2 fataled on every request), and
+1.9.4 differs from 1.9.3 only in Consumer charging, which Pro never calls.
+Nothing else changes before 3.2.0 ships.
