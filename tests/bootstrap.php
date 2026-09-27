@@ -601,6 +601,14 @@ if ( ! function_exists( '_n' ) ) {
 		return 1 === $n ? $single : $plural;
 	}
 }
+if ( ! function_exists( 'wp_generate_password' ) ) {
+	function wp_generate_password( int $length = 12, bool $special_chars = true ): string {
+		return substr( str_repeat( bin2hex( random_bytes( 16 ) ), 4 ), 0, $length );
+	}
+}
+if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
+	define( 'HOUR_IN_SECONDS', 3600 );
+}
 if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );
 }

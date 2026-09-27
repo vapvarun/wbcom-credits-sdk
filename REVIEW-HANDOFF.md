@@ -1,7 +1,7 @@
 # Review handoff: Wbcom Credits SDK and its use in WB Ad Manager Pro
 
 **For:** reviewers (people or agents) checking the SDK with fresh eyes and filing cards for gaps.
-**State at handoff (2026-09-27):** SDK master `daf1f8c` = tag `v1.9.1` plus docs. WB Ad Manager Pro bundles exactly that on its `3.2.0` branch (commit `7d90b30c`).
+**State:** first review round done; its findings are fixed in **1.9.2** (see CHANGELOG). Start the next round from the latest tag. This file is not bundled: WB Ad Manager Pro's `bin/sync-credits-sdk.sh` excludes it; other consumers copy the files listed in docs/INTEGRATION-GUIDE.md step 2.
 
 Your job is to **find and file**, not to fix. Do not push to this repo or to any plugin repo. Every finding becomes a Basecamp card (section 6); the owner decides what gets fixed and when.
 

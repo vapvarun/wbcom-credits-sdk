@@ -334,12 +334,12 @@ final class Transaction_Log {
 	 * @param string $slug
 	 * @param int    $checkout_row_id
 	 * @param int    $delta_cents
-	 * @return void
+	 * @return bool False when the update failed (since 1.9.2; was void).
 	 */
-	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): void {
+	public static function add_refunded_amount( string $slug, int $checkout_row_id, int $delta_cents ): bool {
 		global $wpdb;
 		$table = self::table_name( self::resolve_prefix( $slug ) );
-		$wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		return false !== $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prepare(
 				"UPDATE {$table} SET refunded_cents = refunded_cents + %d WHERE id=%d AND kind=%s",
 				max( 0, $delta_cents ),

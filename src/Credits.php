@@ -180,16 +180,18 @@ final class Credits {
 
 		if ( $result ) {
 			/**
-			 * Fires after credits are topped up.
+			 * Fires after credits are topped up, once the write has committed.
 			 *
 			 * @since 1.0.0
+			 * @since 1.9.2 Fires after the SDK transaction commits; 5th arg $ledger_id.
 			 *
 			 * @param string $slug    Plugin slug.
 			 * @param int    $user_id WordPress user ID.
-			 * @param int    $amount  Credits added.
-			 * @param string $note    Description.
+			 * @param int    $amount    Credits added.
+			 * @param string $note      Description.
+			 * @param int    $ledger_id The ledger row written (since 1.9.2).
 			 */
-			do_action( 'wbcom_credits_topped_up', $slug, $user_id, $amount, $note );
+			self::emit( 'wbcom_credits_topped_up', $slug, $user_id, $amount, $note, (int) $result );
 			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
@@ -229,7 +231,7 @@ final class Credits {
 			 * @param int    $amount  Credits held.
 			 * @param int    $item_id Item ID.
 			 */
-			do_action( 'wbcom_credits_held', $slug, $user_id, $amount, $item_id );
+			self::emit( 'wbcom_credits_held', $slug, $user_id, $amount, $item_id );
 
 			// Check low balance threshold.
 			self::maybe_fire_low_balance( $slug, $user_id );
@@ -272,7 +274,7 @@ final class Credits {
 			 * @param int    $amount  Credits deducted.
 			 * @param int    $item_id Item ID.
 			 */
-			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
+			self::emit( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
 			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
@@ -341,7 +343,7 @@ final class Credits {
 			 * @param int                  $amount  Credits refunded (positive int).
 			 * @param array<string, mixed> $context Linkage context: item_id, ledger_id, note, reason.
 			 */
-			do_action( 'wbcom_credits_refunded', $slug, $user_id, abs( $amount ), $context );
+			self::emit( 'wbcom_credits_refunded', $slug, $user_id, abs( $amount ), $context );
 			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
@@ -400,7 +402,53 @@ final class Credits {
 			 * @param int    $amount  Signed amount (positive added, negative removed).
 			 * @param string $note    Admin note.
 			 */
-			do_action( 'wbcom_credits_adjusted', $slug, $user_id, $amount, $note );
+			self::emit( 'wbcom_credits_adjusted', $slug, $user_id, $amount, $note );
+			self::maybe_fire_low_balance( $slug, $user_id );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Give credits back for an item, without it looking like a purchase.
+	 *
+	 * For a refund or a compensating credit a consumer books itself: it
+	 * writes a `topup` row (reason `refund` by default) linked to the item,
+	 * fires `wbcom_credits_credited`, and does NOT fire
+	 * `wbcom_credits_topped_up`, which consumers map to "funds added" emails
+	 * and purchase revenue. Consumers wrote Ledger::insert() directly to get
+	 * this (1.9.2).
+	 *
+	 * @since 1.9.2
+	 *
+	 * @param string $slug      Plugin slug.
+	 * @param int    $user_id   WordPress user ID.
+	 * @param int    $amount    Ledger units to add (positive).
+	 * @param int    $item_id   Item the credit belongs to (0 if none).
+	 * @param string $note      Description.
+	 * @param string $reason    What happened: 'refund' (default) or another reason code.
+	 * @param string $reference Order / event it relates to.
+	 * @return int|false Inserted row ID or false.
+	 */
+	public static function credit( string $slug, int $user_id, int $amount, int $item_id = 0, string $note = '', string $reason = 'refund', string $reference = '' ): int|false {
+		self::invalidate_cache( $slug, $user_id );
+
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), $item_id, $note ?: 'Credits returned', null, $reason, $reference );
+
+		if ( $result ) {
+			/**
+			 * Fires after credits are given back for an item (not a purchase).
+			 *
+			 * @since 1.9.2
+			 *
+			 * @param string $slug      Plugin slug.
+			 * @param int    $user_id   WordPress user ID.
+			 * @param int    $amount    Ledger units added.
+			 * @param int    $item_id   Item ID.
+			 * @param int    $ledger_id Ledger row written.
+			 * @param string $reason    Reason code.
+			 */
+			self::emit( 'wbcom_credits_credited', $slug, $user_id, abs( $amount ), $item_id, (int) $result, sanitize_key( $reason ) );
 			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
@@ -540,7 +588,7 @@ final class Credits {
 
 		if ( $result ) {
 			/** This action is documented in src/Credits.php (deduct). */
-			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
+			self::emit( 'wbcom_credits_deducted', $slug, $user_id, $amount, $item_id );
 			self::maybe_fire_low_balance( $slug, $user_id );
 		}
 
@@ -555,9 +603,9 @@ final class Credits {
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
 	 * @param int    $hold_id Hold row id.
-	 * @param int    $amount  Amount to spend, ledger units; 0 spends what was held.
+	 * @param int    $amount  Amount to spend, ledger units; 0 spends what was held. At most what was held (1.9.2).
 	 * @param string $note    Description.
-	 * @return int|false The spend row id, or false when the hold is not open.
+	 * @return int|false The spend row id, or false when the hold is not open or $amount is more than was held.
 	 */
 	public static function settle_hold( string $slug, int $user_id, int $hold_id, int $amount = 0, string $note = '' ): int|false {
 		self::invalidate_cache( $slug, $user_id );
@@ -568,7 +616,7 @@ final class Credits {
 
 		if ( $result && null !== $hold ) {
 			/** This action is documented in src/Credits.php (deduct). */
-			do_action( 'wbcom_credits_deducted', $slug, $user_id, $amount > 0 ? abs( $amount ) : abs( (int) $hold->amount ), (int) $hold->item_id );
+			self::emit( 'wbcom_credits_deducted', $slug, $user_id, $amount > 0 ? abs( $amount ) : abs( (int) $hold->amount ), (int) $hold->item_id );
 		}
 
 		return $result;
@@ -594,7 +642,7 @@ final class Credits {
 		}
 
 		/** This action is documented in src/Credits.php (refund). */
-		do_action(
+		self::emit(
 			'wbcom_credits_refunded',
 			$slug,
 			$user_id,
@@ -653,6 +701,35 @@ final class Credits {
 	 */
 	public static function sum_ledger( string $slug, array $args = array() ): int {
 		return (int) Ledger::query( self::get_prefix( $slug ), $args, 'sum' );
+	}
+
+	/**
+	 * Totals and row counts grouped by one column, for list pages and admin
+	 * screens (one query for many users: pass `user_ids`).
+	 *
+	 * @since 1.9.2
+	 *
+	 * @param string              $slug     Plugin slug.
+	 * @param array<string,mixed> $args     query_ledger() filters, plus `user_ids` (list).
+	 * @param string              $group_by 'reason' (default), 'user_id', 'entry_type' or 'item_id'.
+	 * @return array<string, array{total: int, count: int}> Group value => signed total (ledger units) and row count.
+	 */
+	public static function sum_ledger_grouped( string $slug, array $args = array(), string $group_by = 'reason' ): array {
+		$args['group_by'] = $group_by;
+		return (array) Ledger::query( self::get_prefix( $slug ), $args, 'grouped' );
+	}
+
+	/**
+	 * One ledger row by id, or null when it doesn't exist.
+	 *
+	 * @since 1.9.2
+	 *
+	 * @param string $slug Plugin slug.
+	 * @param int    $id   Ledger row id.
+	 * @return object|null Row: id, user_id, item_id, entry_type, amount, note, reason, reference, hold_id, expires_at, created_at (UTC).
+	 */
+	public static function get_ledger_row( string $slug, int $id ): ?object {
+		return Ledger::get_row( self::get_prefix( $slug ), $id );
 	}
 
 	// -------------------------------------------------------------------------
@@ -1105,6 +1182,44 @@ final class Credits {
 	}
 
 	/**
+	 * Whether the loaded SDK has every method a consumer calls.
+	 *
+	 * Another plugin's older copy can win the load order, and then a newer
+	 * method is missing. Pass the Credits methods you call; show your own
+	 * admin notice and hide the credits UI when this is false. Guard the call
+	 * itself too, since copies before 1.9.2 don't have it:
+	 * `method_exists( Credits::class, 'sdk_ready' ) && Credits::sdk_ready( [...] )`.
+	 *
+	 * @since 1.9.2
+	 * @param string[] $methods Credits method names.
+	 * @return bool
+	 */
+	public static function sdk_ready( array $methods ): bool {
+		foreach ( $methods as $method ) {
+			if ( ! method_exists( self::class, (string) $method ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Fire an SDK action once the current SDK transaction commits (now when
+	 * none is open), and never for a write that rolled back.
+	 *
+	 * @param string $hook    Action name.
+	 * @param mixed  ...$args Action arguments.
+	 * @return void
+	 */
+	private static function emit( string $hook, ...$args ): void {
+		Ledger::after_commit(
+			static function () use ( $hook, $args ) {
+				do_action( $hook, ...$args ); // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- documented at each call site.
+			}
+		);
+	}
+
+	/**
 	 * Get the DB table prefix for a plugin slug.
 	 *
 	 * @since 1.0.0
@@ -1197,6 +1312,6 @@ final class Credits {
 		 * @param int    $user_id WordPress user ID.
 		 * @param int    $balance Current balance.
 		 */
-		do_action( 'wbcom_credits_low', $slug, $user_id, $balance );
+		self::emit( 'wbcom_credits_low', $slug, $user_id, $balance );
 	}
 }

@@ -403,9 +403,10 @@ final class Ledger {
 	 * @param int    $user_id   WordPress user ID.
 	 * @param int    $hold_id   Ledger row id of the hold.
 	 * @param int    $cost      Amount to spend, in ledger units; 0 spends what was held.
+	 *                          More than was held is refused (1.9.2).
 	 * @param string $note      Spend note.
 	 * @param string $reference Optional reference.
-	 * @return int|false The spend row id, or false when the hold is not open.
+	 * @return int|false The spend row id, or false when the hold is not open or $cost is more than was held.
 	 */
 	public static function settle( string $prefix, int $user_id, int $hold_id, int $cost = 0, string $note = '', string $reference = '' ): int|false {
 		return self::with_user_lock(
@@ -419,6 +420,13 @@ final class Ledger {
 
 				$held = abs( (int) $hold->amount );
 				$cost = $cost > 0 ? $cost : $held;
+
+				// Never charge more than was reserved: the extra would skip
+				// the balance check the hold stood for (1.9.2). A price rise
+				// holds the difference first (Consumer::reprice_item()).
+				if ( $cost > $held ) {
+					return false;
+				}
 
 				self::begin();
 				$release = self::insert( $prefix, $user_id, 'refund', $held, (int) $hold->item_id, 'Hold released on approval', null, 'hold_release', $reference, $hold_id );
@@ -589,6 +597,48 @@ final class Ledger {
 		self::$depth = max( 0, self::$depth - 1 );
 		if ( 0 === self::$depth ) {
 			$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			self::release_locks_at_end();
+			self::run_after_commit();
+		}
+	}
+
+	/**
+	 * Run $fn once the outermost SDK transaction commits, or now when none
+	 * is open. Dropped if the transaction rolls back.
+	 *
+	 * The SDK fires its actions through this (1.9.2): a listener used to run
+	 * while the claim and the credit were still uncommitted, so it could see
+	 * a purchase that was then rolled back, or break the transaction by
+	 * opening its own.
+	 *
+	 * @since 1.9.2
+	 * @param callable $fn Work to run after commit.
+	 * @return void
+	 */
+	public static function after_commit( callable $fn ): void {
+		if ( 0 === self::$depth ) {
+			$fn();
+			return;
+		}
+		self::$deferred[] = $fn;
+	}
+
+	/**
+	 * Callbacks waiting for the outermost commit.
+	 *
+	 * @var array<int, callable>
+	 */
+	private static array $deferred = array();
+
+	/**
+	 * Run the deferred callbacks, in order, each once.
+	 *
+	 * @return void
+	 */
+	private static function run_after_commit(): void {
+		while ( self::$deferred ) {
+			$fn = array_shift( self::$deferred );
+			$fn();
 		}
 	}
 
@@ -601,8 +651,10 @@ final class Ledger {
 	public static function rollback(): void {
 		global $wpdb;
 		if ( self::$depth > 0 ) {
-			self::$depth = 0;
+			self::$depth    = 0;
+			self::$deferred = array();
 			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			self::release_locks_at_end();
 		}
 	}
 
@@ -623,9 +675,34 @@ final class Ledger {
 	 * @return mixed The callback's result, or false when the lock timed out.
 	 */
 	public static function with_user_lock( string $prefix, int $user_id, callable $fn ): mixed {
+		return self::with_named_lock( self::lock_name( $prefix, $user_id ), $fn );
+	}
+
+	/**
+	 * Run a callback while holding a MySQL named lock: the same re-entrant,
+	 * fail-safe lock as with_user_lock(), for anything else that must be
+	 * checked and written by one request at a time (a coupon's last use).
+	 *
+	 * @since 1.9.2
+	 *
+	 * @param string   $key Lock key; hashed, so any length.
+	 * @param callable $fn  Work to do; its return value is passed back.
+	 * @return mixed The callback's result, or false when the lock timed out.
+	 */
+	public static function with_lock( string $key, callable $fn ): mixed {
+		return self::with_named_lock( 'wbcc_' . substr( md5( self::table_name( '' ) . '|' . $key ), 0, 24 ), $fn );
+	}
+
+	/**
+	 * Hold a named lock around a callback.
+	 *
+	 * @param string   $name Lock name, at most 64 characters.
+	 * @param callable $fn   Work.
+	 * @return mixed
+	 */
+	private static function with_named_lock( string $name, callable $fn ): mixed {
 		global $wpdb;
 
-		$name = self::lock_name( $prefix, $user_id );
 		if ( isset( self::$held[ $name ] ) ) {
 			return $fn();
 		}
@@ -648,9 +725,47 @@ final class Ledger {
 		try {
 			return $fn();
 		} finally {
-			unset( self::$held[ $name ] );
-			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			// Inside an SDK transaction the lock is kept until it commits or
+			// rolls back (1.9.2). Released earlier, the next request got the
+			// lock while this one's writes were still uncommitted, and a plain
+			// read (a refunded amount, a coupon's uses) could not see them.
+			if ( self::$depth > 0 ) {
+				self::$release_at_end[ $name ] = true;
+			} else {
+				self::release_named_lock( $name );
+			}
 		}
+	}
+
+	/**
+	 * Locks to release when the open transaction ends.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static array $release_at_end = array();
+
+	/**
+	 * Release one named lock.
+	 *
+	 * @param string $name Lock name.
+	 * @return void
+	 */
+	private static function release_named_lock( string $name ): void {
+		global $wpdb;
+		unset( self::$held[ $name ] );
+		$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+	}
+
+	/**
+	 * Release every lock kept for the transaction that just ended.
+	 *
+	 * @return void
+	 */
+	private static function release_locks_at_end(): void {
+		foreach ( array_keys( self::$release_at_end ) as $name ) {
+			self::release_named_lock( $name );
+		}
+		self::$release_at_end = array();
 	}
 
 	/**
@@ -687,22 +802,41 @@ final class Ledger {
 
 	// -------------------------------------------------------------------------
 	// Reporting
+
+	/**
+	 * One ledger row by id, or null.
+	 *
+	 * @since 1.9.2
+	 * @param string $prefix Plugin prefix.
+	 * @param int    $id     Row id.
+	 * @return object|null
+	 */
+	public static function get_row( string $prefix, int $id ): ?object {
+		global $wpdb;
+		$table = self::table_name( $prefix );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT id, user_id, item_id, entry_type, amount, note, reason, reference, hold_id, expires_at, created_at FROM {$table} WHERE id = %d", $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return is_object( $row ) ? $row : null;
+	}
 	// -------------------------------------------------------------------------
 
 	/**
 	 * Rows matching a filter, or their count or amount total.
 	 *
-	 * Filters (all optional): user_id, item_id, entry_type, reason (string
-	 * or list), reference, hold_id, since / until (UTC 'Y-m-d H:i:s',
-	 * since inclusive, until exclusive). Paging: limit (default 50, max
-	 * 500), offset, order ('DESC' default, or 'ASC').
+	 * Filters (all optional): user_id, user_ids (list), item_id, entry_type,
+	 * reason (string or list), reference, hold_id, since / until (UTC
+	 * 'Y-m-d H:i:s', since inclusive, until exclusive). Paging: limit
+	 * (default 50, max 500), offset, order ('DESC' default, or 'ASC').
+	 * Mode 'grouped' (1.9.2) returns key => {total, count} per group_by
+	 * (reason, user_id, entry_type or item_id).
 	 *
 	 * @since 1.9.0
 	 *
 	 * @param string              $prefix Plugin prefix.
 	 * @param array<string,mixed> $args   Filters and paging.
-	 * @param string              $mode   'rows', 'count' or 'sum'.
-	 * @return array<int, object>|int
+	 * @param string              $mode   'rows', 'count', 'sum' or 'grouped'.
+	 * @return array<int|string, mixed>|int
 	 */
 	public static function query( string $prefix, array $args = array(), string $mode = 'rows' ): array|int {
 		global $wpdb;
@@ -717,6 +851,12 @@ final class Ledger {
 				$where[]  = "{$col} = %d";
 				$params[] = (int) $args[ $col ];
 			}
+		}
+		if ( ! empty( $args['user_ids'] ) ) {
+			$ids      = array_values( array_filter( array_map( 'absint', (array) $args['user_ids'] ) ) );
+			$ids      = $ids ? $ids : array( 0 );
+			$where[]  = 'user_id IN (' . implode( ', ', array_fill( 0, count( $ids ), '%d' ) ) . ')';
+			$params   = array_merge( $params, $ids );
 		}
 		foreach ( array( 'entry_type', 'reference' ) as $col ) {
 			if ( isset( $args[ $col ] ) && '' !== (string) $args[ $col ] ) {
@@ -739,6 +879,21 @@ final class Ledger {
 		}
 
 		$where_sql = implode( ' AND ', $where );
+
+		if ( 'grouped' === $mode ) {
+			$group = in_array( $args['group_by'] ?? 'reason', array( 'reason', 'user_id', 'entry_type', 'item_id' ), true ) ? $args['group_by'] : 'reason';
+			$sql   = "SELECT {$group} AS group_key, COALESCE( SUM( amount ), 0 ) AS total, COUNT(*) AS row_count FROM {$table} WHERE {$where_sql} GROUP BY {$group}";
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
+			$rows = $wpdb->get_results( $params ? $wpdb->prepare( $sql, $params ) : $sql );
+			$out  = array();
+			foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+				$out[ (string) $row->group_key ] = array(
+					'total' => (int) $row->total,
+					'count' => (int) $row->row_count,
+				);
+			}
+			return $out;
+		}
 
 		if ( 'count' === $mode || 'sum' === $mode ) {
 			$select = 'count' === $mode ? 'COUNT(*)' : 'COALESCE( SUM( amount ), 0 )';

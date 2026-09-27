@@ -36,9 +36,8 @@ add_action( 'wbcom_credits_sdk_registry', function ( $registry ) {
             ],
         ],
         'settings' => [
-            'low_threshold'       => 3,
-            'purchase_url'        => '/buy-credits/',
-            'admin_settings_hook' => 'mp_admin_settings_tabs',
+            'low_threshold' => 3,
+            'purchase_url'  => '/buy-credits/',
         ],
     ] );
 } );
@@ -103,6 +102,9 @@ Credits::topup_once( 'my-plugin', 'adapter:my-shop', 'order:' . $order_id, $user
 
 // Cancel a hold that is still open (hard delete). Settled holds are never touched.
 Credits::cancel_hold_by_id( 'my-plugin', $user_id, $hold_id );
+
+// Give money back for an item, without a "credits added" purchase event (1.9.2).
+Credits::credit( 'my-plugin', $user_id, 250, $ad_id, 'Refund: ad rejected', 'refund', 'ad:' . $ad_id );
 ```
 
 Older calls still work: `hold()` (no balance check), `deduct( $item_id )` (settles the item's open hold, or returns false), `refund( $item_id )` (releases the item's open hold, or credits the amount back) and `cancel_hold( $item_id )` (open holds only). A consumer with its own check-then-write can wrap it in `Credits::with_user_lock()`.

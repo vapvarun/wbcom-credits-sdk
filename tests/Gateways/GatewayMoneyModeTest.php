@@ -138,6 +138,34 @@ final class GatewayMoneyModeTest extends TestCase {
 		self::assertSame( array( 'purchase', 'gateway_refund' ), array_column( $rows, 'reason' ) );
 	}
 
+	public function test_a_refund_whose_log_write_fails_is_rolled_back_and_retries_cleanly(): void {
+		global $wpdb;
+		$this->deliver_checkout_webhook();
+		$refund = array(
+			'id'   => 'evt_money_refund_fail',
+			'type' => 'charge.refunded',
+			'data' => array(
+				'object' => array(
+					'payment_intent'  => 'pi_money_1',
+					'amount_refunded' => self::AMOUNT_CENTS,
+					'currency'        => strtolower( self::CURRENCY ),
+					'metadata'        => array( 'wbcom_session' => self::SESSION_ID ),
+				),
+			),
+		);
+
+		// The log write fails: the revoke and the event claim roll back (1.9.2).
+		$wpdb->fail_inserts_into = Transaction_Log::table_name( self::PREFIX );
+		$failed = ( new Stripe() )->handle_webhook( self::SLUG, $refund );
+		self::assertSame( 500, $failed->get_status() );
+		self::assertSame( self::CREDITS * 100, Credits::get_balance( self::SLUG, self::USER_ID ), 'Credits are not revoked without a log row.' );
+
+		// The provider's retry applies it once.
+		$wpdb->fail_inserts_into = '';
+		( new Stripe() )->handle_webhook( self::SLUG, $refund );
+		self::assertSame( 0, Credits::get_balance( self::SLUG, self::USER_ID ) );
+	}
+
 	public function test_full_refund_revokes_the_same_money_amount(): void {
 		$this->deliver_checkout_webhook();
 

@@ -30,6 +30,10 @@ For the how-to (bundle, register, take money in, charge, refund, report), see
   If you need a query they do not offer, add it to the SDK first.
 - Pass a `reason` and `reference` when you top up or adjust
   (`purchase` + order id, `admin_adjust`, `gateway_refund`).
+- Give money back for an item with `Credits::credit()` (1.9.2): it does
+  not fire the purchase event `wbcom_credits_topped_up`.
+- Totals for many users, or per reason: `sum_ledger_grouped()`. One row:
+  `get_ledger_row()`.
 - Existing direct reads and writes are debt. List them in the consumer's
   `docs/standards/credits-sdk.md` and remove them as the SDK gains the API.
 

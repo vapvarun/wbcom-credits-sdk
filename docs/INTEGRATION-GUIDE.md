@@ -1,6 +1,6 @@
 # Integrating the Credits SDK into a plugin
 
-A step-by-step guide for a plugin that wants credits or a money balance: bundle the SDK, register, take money in, charge for things, give money back, and report on it. Written against **1.9.1**.
+A step-by-step guide for a plugin that wants credits or a money balance: bundle the SDK, register, take money in, charge for things, give money back, and report on it. Written against **1.9.2**.
 
 Read [CONSUMER-RULES.md](CONSUMER-RULES.md) alongside this. The rules say what every consumer must and must not do; this guide shows how. Payment gateways and the checkout screen have their own guides, linked where they come up.
 
@@ -84,14 +84,15 @@ An older copy of the SDK bundled by another plugin can win on a site that runs b
 function my_plugin_credits_ready(): bool {
 	static $ready = null;
 	if ( null === $ready ) {
-		$ready = class_exists( '\Wbcom\Credits\Credits' );
-		foreach ( array( 'try_hold', 'settle_hold', 'release_hold', 'spend', 'query_ledger' ) as $method ) {
-			$ready = $ready && method_exists( '\Wbcom\Credits\Credits', $method );
-		}
+		$ready = class_exists( '\Wbcom\Credits\Credits' )
+			&& method_exists( '\Wbcom\Credits\Credits', 'sdk_ready' ) // 1.9.2+
+			&& \Wbcom\Credits\Credits::sdk_ready( array( 'try_hold', 'settle_hold', 'release_hold', 'spend', 'credit', 'query_ledger' ) );
 	}
 	return $ready;
 }
 ```
+
+List every method you call.
 
 When it returns false, hide the credits UI and show the site owner an admin notice ("another plugin ships an older Credits SDK; update it"). Never fatal.
 
@@ -222,7 +223,8 @@ Credits::with_user_lock( 'my-plugin', $user_id, function () use ( $user_id ) {
 | Situation | Call |
 |---|---|
 | Undo a hold | `release_hold()` / `cancel_hold_by_id()` |
-| Refund part or all of something already charged | `Credits::refund( $slug, $user_id, $ledger_units, $item_id, $note )`, or `refund_money()` in money mode |
+| Give money back for an item (your own refund), without a "credits added" purchase event | `Credits::credit( $slug, $user_id, $ledger_units, $item_id, $note, 'refund', $reference )`; fires `wbcom_credits_credited` |
+| Release a hold, or refund with the item's hold lifecycle | `Credits::refund( $slug, $user_id, $ledger_units, $item_id, $note )`, or `refund_money()` in money mode |
 | Admin correction, either direction | `Credits::adjust( $slug, $user_id, $signed_units, $note )` |
 | Gateway refund (Stripe / PayPal / WooCommerce) | Nothing: the SDK revokes it, capped at what is unspent |
 
@@ -244,6 +246,15 @@ $history = Credits::query_ledger( 'my-plugin', array(
 	'offset'  => 0,
 ) );
 $total_spent = -Credits::sum_ledger( 'my-plugin', array( 'user_id' => $user_id, 'reason' => 'spend' ) );
+
+// A list page: balance per user for a whole page of users, one query.
+$per_user = Credits::sum_ledger_grouped( 'my-plugin', array( 'user_ids' => $page_user_ids ), 'user_id' );
+// $per_user['42'] = array( 'total' => 1250, 'count' => 7 )
+
+// An admin screen's tabs: rows and totals per reason.
+$per_reason = Credits::sum_ledger_grouped( 'my-plugin', array( 'since' => $utc_since ) );
+
+$row = Credits::get_ledger_row( 'my-plugin', $ledger_id ); // One row, or null.
 ```
 
 - Every row has a `reason`: `purchase`, `topup`, `hold`, `hold_release`, `spend`, `refund`, `gateway_refund`, `admin_adjust` or `expiry`. Rows written before 1.9.0 have none.
@@ -258,7 +269,8 @@ $total_spent = -Credits::sum_ledger( 'my-plugin', array( 'user_id' => $user_id, 
 
 | Action | Arguments | Use it for |
 |---|---|---|
-| `wbcom_credits_topped_up` | slug, user_id, amount, note | "Credits added" email |
+| `wbcom_credits_topped_up` | slug, user_id, amount, note, ledger_id | "Credits added" email |
+| `wbcom_credits_credited` | slug, user_id, amount, item_id, ledger_id, reason | Your own refunds and credits (`Credits::credit()`) |
 | `wbcom_credits_purchase_completed` | slug, user_id, log_id | Receipt email (`Receipt::data()`, `Receipt::url()`) |
 | `wbcom_credits_held` | slug, user_id, amount, item_id | - |
 | `wbcom_credits_deducted` | slug, user_id, amount, item_id | Activity log |
@@ -268,7 +280,7 @@ $total_spent = -Credits::sum_ledger( 'my-plugin', array( 'user_id' => $user_id, 
 | `wbcom_credits_expired` | slug, user_id, amount, lot_id | Expiry notice |
 | `wbcom_credits_gateway_topup` / `wbcom_credits_gateway_refund` | slug, user_id, credits, ledger_id, gateway, session | Gateway-specific bookkeeping |
 
-Amounts are ledger units unless a row says otherwise. Every listener must check `$slug` first: other plugins on the site fire the same actions.
+Amounts are ledger units unless a row says otherwise. Every listener must check `$slug` first: other plugins on the site fire the same actions. Actions fire after the write has committed (1.9.2), so a listener can read the row, and never hears about a write that rolled back.
 
 Filters you are most likely to use: `wbcom_credits_checkout_enabled`, `wbcom_credits_purchase_paths`, `wbcom_credits_cost`, `wbcom_credits_purchase_url`, `wbcom_credits_lock_timeout` (seconds, default 10), and `wbcom_credits_template_path` (override the receipt template).
 

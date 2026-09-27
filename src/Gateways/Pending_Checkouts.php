@@ -108,6 +108,33 @@ final class Pending_Checkouts {
 	}
 
 	/**
+	 * Unpaid checkouts using a coupon, started at or after $since.
+	 *
+	 * Entries staged before 1.9.2 carry no start time and are not counted.
+	 *
+	 * @since 1.9.2
+	 * @param string $slug  Plugin slug.
+	 * @param string $code  Upper-case coupon code.
+	 * @param int    $since Unix time.
+	 * @return int
+	 */
+	public static function coupon_holds( string $slug, string $code, int $since ): int {
+		$now   = time();
+		$count = 0;
+		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
+		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
+			$entry = get_option( (string) $key, null );
+			if ( ! is_array( $entry ) || (int) ( $entry['expires_at'] ?? 0 ) < $now ) {
+				continue;
+			}
+			if ( (int) ( $entry['created_at'] ?? 0 ) >= $since && strtoupper( (string) ( $entry['order']['coupon'] ?? '' ) ) === $code ) {
+				++$count;
+			}
+		}
+		return $count;
+	}
+
+	/**
 	 * Store the expected payment for a session.
 	 *
 	 * @param string               $slug        Plugin slug.
@@ -138,6 +165,7 @@ final class Pending_Checkouts {
 				'price_cents' => (int) ( $payload['price_cents'] ?? 0 ),
 				'currency'    => strtoupper( sanitize_text_field( (string) ( $payload['currency'] ?? 'USD' ) ) ),
 				'order'       => (array) ( self::$staged_order ?? array() ),
+				'created_at'  => time(),
 				'expires_at'  => $expires_at,
 			),
 			false
