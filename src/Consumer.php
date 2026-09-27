@@ -157,8 +157,11 @@ final class Consumer {
 					return true;
 				}
 
-				$cost = $this->resolve_cost( $item_id );
-				if ( $cost <= 0 ) {
+				// A free item records a zero hold, so moving it to a paid tier
+				// later reprices from 0 and charges the full difference.
+				$cost = max( 0, $this->resolve_cost( $item_id ) );
+				if ( 0 === $cost ) {
+					$this->set_state( $item_id, 'held', 0 );
 					return true;
 				}
 
@@ -196,8 +199,10 @@ final class Consumer {
 		// republish of a settled item (renewal, reactivation) or an item
 		// whose hold was never placed charges nothing more.
 		if ( '' !== $record['state'] ) {
-			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
-				$this->settle( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits deducted' );
+			if ( 'held' === $record['state'] ) {
+				if ( $record['cost'] > 0 ) {
+					$this->settle( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits deducted' );
+				}
 				$this->set_state( $item_id, 'settled', $record['cost'] );
 				return true;
 			}
@@ -235,10 +240,12 @@ final class Consumer {
 		// so a member could take a paid listing down, get paid back and put
 		// it up again for free.
 		if ( '' !== $record['state'] ) {
-			if ( 'held' === $record['state'] && $record['cost'] > 0 ) {
-				$this->release( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits refunded' );
+			if ( 'held' === $record['state'] ) {
+				if ( $record['cost'] > 0 ) {
+					$this->release( $user_id, $record['cost'], $item_id, $this->config['label'] . ' — credits refunded' );
+				}
 				$this->set_state( $item_id, 'released', $record['cost'] );
-				return true;
+				return $record['cost'] > 0;
 			}
 			return false;
 		}

@@ -234,5 +234,19 @@ namespace Wbcom\Credits\Tests\Credits {
 			$this->assertSame( $first, Registry::instance()->consumer( 'consumer-lookup', 'post' ) );
 			$this->assertNull( Registry::instance()->consumer( 'consumer-lookup', 'missing' ) );
 		}
+
+		public function test_a_free_item_moved_to_a_paid_tier_is_charged_the_full_cost(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 0;
+			$c = $this->priced();
+
+			$this->assertTrue( $c->reserve_item( self::ITEM ) );
+			$c->settle_item( self::ITEM ); // Published free.
+			$this->assertSame( array( 'state' => 'settled', 'cost' => 0 ), $c->record( self::ITEM ) );
+
+			self::$price = 10;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
 	}
 }
