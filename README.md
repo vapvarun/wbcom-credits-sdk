@@ -229,21 +229,34 @@ foreach ( $entries as $entry ) {
 }
 ```
 
-### Pre-Submission Credit Gate
+### Charging an item (since 1.9.0)
+
+A balance check before submit is only a hint: two requests can both pass it
+and both spend the same credits. Charge through the consumer instead. Its
+item operations run the balance check and the write under the user's credit
+lock and report what happened, so you can refuse to publish an item you could
+not charge:
 
 ```php
-// In your REST endpoint or form handler:
-$cost    = Credits::get_cost( 'my-plugin', 'blog_post', $post_id );
-$balance = Credits::get_balance( 'my-plugin', $user_id );
+$consumer = \Wbcom\Credits\Registry::instance()->consumer( 'my-plugin', 'blog_post' );
 
-if ( $cost > 0 && $balance < $cost ) {
-    return new WP_Error(
-        'insufficient_credits',
-        sprintf( 'You need %d credits but only have %d.', $cost, $balance ),
-        array( 'status' => 402 )
-    );
+if ( ! $consumer->reserve_item( $post_id ) ) {   // hold, under the lock
+    return new WP_Error( 'insufficient_credits', '...', array( 'status' => 402 ) );
 }
+$consumer->settle_item( $post_id );   // on approval: settles the open hold only
+$consumer->release_item( $post_id );  // on rejection / trash: releases it only
+$consumer->reprice_item( $post_id );  // tier changed: charge or refund the difference
+$consumer->record( $post_id );        // ['state' => held|settled|released, 'cost' => int]
 ```
+
+A released item is charged again by the next `reserve_item()` (a
+resubmission). A free item records a zero hold, so moving it to a paid tier
+later charges the full difference. Your own spend paths can take the same
+lock with `Credits::with_user_lock( $slug, $user_id, $fn )`.
+
+The `hold_on` / `deduct_on` / `refund_on` hooks still work and call these
+methods; drive the consumer yourself when some of your paths publish without
+firing an action.
 
 ### Hooks — Listen for Credit Events
 
@@ -289,9 +302,8 @@ add_action( 'wbcom_credits_refunded', function ( $slug, $user_id, $amount, $cont
 | `wbcom_credits_held` | `$slug, $user_id, $amount, $item_id` | `Credits::hold()` reserves credits. |
 | `wbcom_credits_deducted` | `$slug, $user_id, $amount, $item_id` | `Credits::deduct()` commits a hold into a permanent deduction. |
 | `wbcom_credits_refunded` | `$slug, $user_id, $amount, $context` | `Credits::refund()` returns held credits OR a gateway refund (Stripe/PayPal `charge.refunded` / `PAYMENT.CAPTURE.REFUNDED`) revokes credits. **Since 1.4.0:** 3rd arg is the refunded credit amount (positive int); 4th arg `$context` carries `reason`, `item_id`, `ledger_id`, and (for gateway refunds) `gateway`, `session_id`, `provider_ref`. Additive — 3-arg listeners still work — but the 3rd arg changed meaning from `item_id` to the amount. |
-| `wbcom_credits_low` | `$slug, $user_id, $balance` | Balance crosses below the configured threshold after a write. |
-
-> `Credits::adjust()` does NOT fire any of these actions — it's the raw ledger write primitive. Direct adjust calls (admin claw-back, balance corrections) are silent. If you need an event for them, fire your own action inline at the callsite.
+| `wbcom_credits_adjusted` | `$slug, $user_id, $amount, $note` | `Credits::adjust()` (admin correction, either sign). Since 1.9.0. |
+| `wbcom_credits_low` | `$slug, $user_id, $balance` | Balance falls to or below the configured threshold. Once per crossing since 1.9.0: it fires again only after the balance has gone back above the threshold. |
 
 ### Filters — Customize Behavior
 
@@ -425,6 +437,8 @@ Response:
 POST /wp-json/wbcom-credits/v1/my-plugin/topup
 { "user_id": 42, "amount": 10, "note": "Bonus credits" }
 ```
+
+`amount` is signed since 1.9.0: a negative amount removes credits.
 
 Response:
 ```json

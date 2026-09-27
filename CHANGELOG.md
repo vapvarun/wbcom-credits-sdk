@@ -2,6 +2,27 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - Unreleased
+
+Spends are serialised per user, and consumers can drive an item's charge directly. Found on WP Career Board Pro: ten parallel posts with credit for one made two jobs and a negative balance; auto-published, resubmitted and re-boarded jobs were free; every rejection refunded again.
+
+### Added
+
+- **`Credits::with_user_lock( $slug, $user_id, $fn )`** - a MySQL named lock per (prefix, user) around "read balance, write". The balance cache is dropped on entry.
+- **`Consumer::reserve_item()` / `settle_item()` / `release_item()` / `reprice_item()`**, public and returning what happened. `reserve_item()` runs under the lock and refuses what the author can't afford; a released item is charged again; a free item records a zero hold so a later move to a paid tier charges the full difference. `reprice_item()` holds, settles or refunds the difference when an item's price changes. `record()`, `set_state()` and `meta_key()` are public so a consumer can seed records for items charged before they existed.
+- **`Registry::consumer( $slug, $id )`** returns the Consumer object for a registered id.
+- **`wbcom_credits_adjusted`** action from `Credits::adjust()`.
+- **Ledger schema v4:** `idx_item_id` and `idx_user_item_type (user_id, item_id, entry_type)`, added to existing tables by `Ledger::maybe_add_indexes()`.
+
+### Changed
+
+- **`wbcom_credits_low` fires once per crossing** (user meta flag, cleared when the balance goes back above the threshold) and on every debit path (hold, deduct, adjust). It fired on every hold at or below the threshold, so a member posting several items got an email per post.
+- **`POST /topup` takes a signed amount.** `absint` turned -3 into +3.
+
+### Fixed
+
+- `tests/loader-election-check.php` rewrote a literal `'1.7.1'` that stopped existing at 1.8.0, so both fake copies announced the same version and the check failed.
+
 ## [1.8.0] - September 2026
 
 First tagged release since 1.7.0. Consolidates the 1.7.0 (copy election), 1.7.1 (PayPal capture on return) and 1.7.2 (refund and checkout integrity) development cycles - none of which were tagged or released on their own - plus three additions made while preparing this release: `Pending_Checkouts::for_user()` upstreamed from a downstream fork, a refund policy that caps every gateway refund at the buyer's unspent balance, and a flattened admin layout for the Credits settings templates.
