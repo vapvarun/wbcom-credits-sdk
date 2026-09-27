@@ -170,7 +170,7 @@ final class Ledger {
 				'note'       => $note,
 				// UTC from PHP, never the column default: MySQL's
 				// CURRENT_TIMESTAMP follows the server's time zone.
-				'created_at' => current_time( 'mysql', true ),
+				'created_at' => gmdate( 'Y-m-d H:i:s' ),
 			),
 			array( '%d', '%d', '%s', '%d', '%s', '%s' )
 		);

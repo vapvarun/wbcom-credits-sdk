@@ -104,7 +104,7 @@ final class Processed_Events {
 				sanitize_key( $slug ),
 				sanitize_key( $gateway ),
 				$event_id,
-				current_time( 'mysql', true ) // UTC, see Ledger::insert().
+				gmdate( 'Y-m-d H:i:s' ) // UTC, see Ledger::insert().
 			)
 		);
 
