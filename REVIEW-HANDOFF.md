@@ -35,7 +35,7 @@ Consumers today: WB Ad Manager Pro (1.9.1), WP Career Board Pro (a 1.9.0 develop
 ```bash
 git clone https://github.com/vapvarun/wbcom-credits-sdk && cd wbcom-credits-sdk
 composer install
-bash bin/audit.sh          # lint, PHPUnit, PHPStan, class map, version and doc checks, API snapshot: expect 11/11
+bash bin/audit.sh          # lint, PHPUnit, PHPStan, class map, version and doc checks, API snapshot: expect 12/12
 vendor/bin/phpunit         # 226 tests, on an in-memory $wpdb fake (tests/Support/FakeWpdb.php)
 php tests/loader-election-check.php
 ```

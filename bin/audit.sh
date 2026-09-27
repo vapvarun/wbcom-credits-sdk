@@ -115,22 +115,34 @@ fi
 # ─── 4. Class loader coherence ──────────────────────────────────────────────
 section "Class loader map vs filesystem"
 
-# Extract every `'\Wbcom\Credits\…' => __DIR__ . '/src/…'` line from the loader,
-# then check each target file exists.
+# Extract every `'Wbcom\\Credits\\…' => '/src/…'` entry of the announced map,
+# then check each target file exists. (It matched `__DIR__ . '/src/` until
+# 1.9.3, a form the map never used, so it checked nothing.)
 MISSING_CLASSES=0
-while IFS= read -r line; do
-    # Strip everything up to the '/' so we get just the relative path.
-    rel="$(echo "$line" | sed -E "s#.*__DIR__ \. '([^']+)'.*#\1#")"
+MAP_ENTRIES=0
+while IFS= read -r rel; do
+    MAP_ENTRIES=$((MAP_ENTRIES + 1))
     if [ ! -f "$SDK_ROOT$rel" ]; then
         echo "    missing: $rel"
         MISSING_CLASSES=$((MISSING_CLASSES + 1))
     fi
-done < <(grep -E "__DIR__ \. '/src/" wbcom-credits-sdk.php || true)
+done < <(grep -oE "=> '/src/[^']+'" wbcom-credits-sdk.php | sed -E "s#=> '([^']+)'#\1#" || true)
 
-if [ "$MISSING_CLASSES" -eq 0 ]; then
-    pass "every class-loader entry resolves on disk"
+if [ "$MAP_ENTRIES" -eq 0 ]; then
+    fail "found no class-map entries to check"
+elif [ "$MISSING_CLASSES" -eq 0 ]; then
+    pass "all $MAP_ENTRIES class-loader entries resolve on disk"
 else
     fail "$MISSING_CLASSES class-loader entries missing on disk"
+fi
+
+# ─── Loader election across copies ──────────────────────────────────────────
+section "Loader election (older copy loaded first)"
+if php tests/loader-election-check.php >/tmp/wcb-sdk-election.log 2>&1 && grep -q '^ok' /tmp/wcb-sdk-election.log; then
+    pass "newest copy serves every class, even one an older copy's map lacks"
+else
+    fail "loader election check failed — see /tmp/wcb-sdk-election.log"
+    grep -E 'FAIL' /tmp/wcb-sdk-election.log | head -3 | sed 's/^/    /'
 fi
 
 # ─── 5. Version coherence ───────────────────────────────────────────────────
