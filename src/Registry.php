@@ -60,7 +60,7 @@ final class Registry {
 	 *                                       time so page IDs resolve live. Without it, the gateway
 	 *                                       falls back to its settings URL, then the site home —
 	 *                                       which is never where a buyer expects to land.
-	 *     @type array           $settings   Optional overrides: low_threshold, purchase_url, admin_settings_hook.
+	 *     @type array           $settings   Optional overrides: low_threshold, purchase_url.
 	 * }
 	 * @return void
 	 */
@@ -87,9 +87,8 @@ final class Registry {
 				'user_type' => 'user',
 				'consumers' => array(),
 				'settings'  => array(
-					'low_threshold'      => 5,
-					'purchase_url'       => '',
-					'admin_settings_hook' => '',
+					'low_threshold' => 5,
+					'purchase_url'  => '',
 				),
 			)
 		);

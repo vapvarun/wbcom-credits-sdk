@@ -196,6 +196,17 @@ final class FakeWpdb {
 			usort( $rows, static fn ( $a, $b ) => (int) $a['id'] <=> (int) $b['id'] );
 			return array_map( array( $this, 'as_ledger_object' ), $rows );
 		}
+		// Ledger::query() grouped: SELECT col AS group_key, SUM, COUNT ... WHERE 1=1 ... GROUP BY col.
+		if ( preg_match( '/SELECT\s+(\w+)\s+AS\s+group_key.*?FROM\s+(\S+)\s+WHERE\s+1=1(.*?)\s+GROUP BY\s+(\w+)/is', $sql, $m ) ) {
+			$groups = array();
+			foreach ( $this->filter_where( $m[2], $m[3] ) as $row ) {
+				$key = (string) ( $row[ $m[1] ] ?? '' );
+				$groups[ $key ] = $groups[ $key ] ?? (object) array( 'group_key' => $key, 'total' => 0, 'row_count' => 0 );
+				$groups[ $key ]->total     += (int) ( $row['amount'] ?? 0 );
+				$groups[ $key ]->row_count += 1;
+			}
+			return array_values( $groups );
+		}
 		// Ledger::query() rows: WHERE 1=1 AND ... ORDER BY id DESC|ASC LIMIT n OFFSET m.
 		if ( preg_match( '/FROM\s+(\S+)\s+WHERE\s+1=1(.*?)\s+ORDER BY id (ASC|DESC)\s+LIMIT\s+(\d+)\s+OFFSET\s+(\d+)/is', $sql, $m ) ) {
 			$rows = $this->filter_where( $m[1], $m[2] );
@@ -479,7 +490,13 @@ final class FakeWpdb {
 		return false;
 	}
 
+	/** Table whose inserts fail, to test rollback paths. */
+	public string $fail_inserts_into = '';
+
 	public function insert( string $table, array $data, ?array $format = null ): int|false {
+		if ( '' !== $this->fail_inserts_into && $table === $this->fail_inserts_into ) {
+			return false;
+		}
 		if ( ! isset( $this->tables[ $table ] ) ) {
 			$this->tables[ $table ] = array();
 		}

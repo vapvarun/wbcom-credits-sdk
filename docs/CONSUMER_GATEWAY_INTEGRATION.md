@@ -199,7 +199,7 @@ When the provider redirects the user back to your `success_url`, you can render 
 - Refreshes the user's balance (call `/wp-json/wbcom-credits/v1/{slug}` GET → returns balance).
 - Optionally polls for the webhook to land (the redirect happens immediately on success; the webhook may arrive a few seconds later).
 
-If your plugin already has a "credits dashboard" for users, redirect to it. The SDK ships `templates/frontend/balance-widget.php` (v1.2.0+) you can `Template::get('frontend/balance-widget', [ 'slug' => 'your-slug' ])` into any page.
+If your plugin already has a "credits dashboard" for users, redirect to it (register it as `return_url`). The SDK ships no balance widget: show the balance with `Credits::get_balance()` / `balance_money()` in your own template.
 
 ---
 

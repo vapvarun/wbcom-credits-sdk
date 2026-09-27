@@ -92,7 +92,8 @@ final class Fulfilment {
 		 * @param string $gateway_id
 		 * @param string $session_id
 		 */
-		do_action( 'wbcom_credits_gateway_topup', $slug, $user_id, $credits, (int) $ledger_id, $gateway_id, $session_id );
+		$gateway_topup_args = array( $slug, $user_id, $credits, (int) $ledger_id, $gateway_id, $session_id );
+		\Wbcom\Credits\Ledger::after_commit( static fn () => do_action( 'wbcom_credits_gateway_topup', ...$gateway_topup_args ) );
 
 		/**
 		 * Fires once a purchase is paid and recorded - the hook for receipts.
@@ -106,7 +107,8 @@ final class Fulfilment {
 		 * @param int    $user_id Buyer.
 		 * @param int    $log_id  Transaction_Log row id.
 		 */
-		do_action( 'wbcom_credits_purchase_completed', $slug, $user_id, $log_id );
+		$purchase_completed_args = array( $slug, $user_id, $log_id );
+		\Wbcom\Credits\Ledger::after_commit( static fn () => do_action( 'wbcom_credits_purchase_completed', ...$purchase_completed_args ) );
 
 		return array(
 			'ledger_id' => (int) $ledger_id,

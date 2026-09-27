@@ -15,15 +15,14 @@ win on load order and hand a newer consumer a class without the methods it
 calls. That is what consumers' readiness checks are for (Guard column), and
 why bundles should still be kept current rather than left to the election.
 
-Last audited: 2026-09-15, against canonical `master` (1.7.0). 1.7.1 and 1.7.2
-were never tagged or bundled on their own — every fix from both is folded
-into 1.8.0, the first tag since 1.7.0.
+Last audited: 2026-09-27, against 1.9.2. Tags: v1.8.0, v1.8.1, v1.9.0, v1.9.1,
+v1.9.2 (1.7.1 and 1.7.2 were folded into 1.8.0 and never tagged).
 
 ## Consumers
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.8.1 → 1.9.1* | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.1 → 1.9.2* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.0 development build (branch `1.8.0`); re-bundle the tag | `JobCharge::consumer()` gates on `Registry::consumer()` |
@@ -36,16 +35,15 @@ into 1.8.0, the first tag since 1.7.0.
 Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
 
-**Everyone should move to 1.8.0 on their next release.** WB Listora, WP
-Career Board Pro and WPConnectPress are all still on pre-1.8.0 bundles (rows
-above); none of them carry the 1.7.2 refund/checkout-integrity fixes, the
-1.7.1 PayPal capture fix, or the 1.8.0 refund-cap safety net, and Career
-Board Pro / WPConnectPress predate the money-mode and purchase-paths API
-entirely. There is nothing to migrate — every 1.8.0 addition is additive —
-so this is a drop-in bundle swap, not a code change, unless a consumer wants
-to start using `for_user()`, `purchase_paths()`, or `cancel_hold_by_id()`.
+**Everyone moves to the latest tag on their next release; WB Ad Manager
+Pro goes first.** WB Listora, WP Career Board Pro and WPConnectPress are
+parked ("Not now" on the Wbcom Credits SDK board) until then. Their bundles
+lack the 1.9.x integrity fixes: holds settled by id, balance checks under a
+lock, claims and credits in one transaction, events after commit, atomic
+refunds and coupon limits. What each must change is in the CHANGELOG
+(1.9.0 "Changed", 1.9.2 "Changed"); the rest is additive.
 
-**Before re-vendoring 1.8.0:** hook `wbcom_credits_checkout_enabled` to the
+**Before re-vendoring:** hook `wbcom_credits_checkout_enabled` to the
 plugin's own "credits are sold here" switch. It gates the gateway checkout
 route AND the WooCommerce / MemberPress / PMPro adapters' mapped products,
 so a plugin that leaves it unhooked keeps selling while its credits feature

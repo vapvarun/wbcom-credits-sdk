@@ -2,6 +2,30 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] - September 2026
+
+Fixes from the first independent review of 1.9.1 (Wbcom Credits SDK board), done before any consumer ships 1.9.x. Every item was verified in code before it was fixed.
+
+### Fixed
+
+- **SDK events fire after the write commits.** `wbcom_credits_topped_up` and every other SDK action ran while a claim and its credit were still uncommitted, so a listener could email "funds added" for a purchase that then rolled back, or break the transaction by opening its own. Actions now run after the outermost SDK transaction commits (immediately when none is open) and are dropped on rollback (`Ledger::after_commit()`).
+- **A lock taken inside a transaction is held until it ends.** The per-user lock was released when its callback returned, before the enclosing transaction committed, so the next request could read values the first had not committed yet (a refunded amount, a coupon's uses). Named locks taken in an SDK transaction are now released at commit or rollback.
+- **Gateway refunds are atomic.** The unspent-balance cap, the revoke and the refund log are read and written under the buyer's lock in one transaction; the checkout row is re-read under the lock. Two refunds for one charge, or a refund racing a spend, could both read the same balance and refunded amount. A failed log write used to leave credits revoked with no record (the result was not checked); it now rolls the revoke and the event claim back, so the provider's retry applies it once. `Transaction_Log::add_refunded_amount()` returns bool.
+- **Coupon usage limits can't be oversold.** Usage was counted only from paid orders, so every buyer who started checkout before the first paid could take the last use, and parallel 100% coupon checkouts all passed. The limit is now re-checked and the use recorded under a per-coupon lock: a free order is recorded before the lock is released, and an unpaid checkout holds its use for an hour (filter `wbcom_credits_coupon_hold_seconds`). A buyer who pays after that is still credited.
+- **`settle_hold()` refuses to spend more than was held.** The extra skipped the balance check the hold stood for. Price rises hold the difference first (`Consumer::reprice_item()`).
+
+### Added
+
+- **`Credits::credit( $slug, $user_id, $amount, $item_id, $note, $reason = 'refund', $reference )`** - give credits back for an item without it looking like a purchase. Writes an item-linked `topup` row and fires `wbcom_credits_credited`, not `wbcom_credits_topped_up`. Consumers wrote `Ledger::insert()` directly for this.
+- **The ledger row id is the 5th argument of `wbcom_credits_topped_up`.** Listeners no longer re-find the row by user, amount and note.
+- **`Credits::sum_ledger_grouped( $slug, $args, $group_by )`** (totals and counts per reason, user, entry type or item; `user_ids` filters many users in one query) and **`Credits::get_ledger_row( $slug, $id )`**.
+- **`Credits::sdk_ready( $methods )`** - one check for "does the loaded copy have what I call".
+- `Ledger::with_lock()`, `Ledger::after_commit()`, `Ledger::get_row()`; `Pending_Checkouts::coupon_holds()`; pending checkouts record `created_at`.
+
+### Changed
+
+- The unused `admin_settings_hook` registration setting is gone from the defaults and docs (nothing ever read it). Docs no longer name templates that don't exist (a balance widget, admin tabs).
+
 ## [1.9.1] - September 2026
 
 Found while bundling 1.9.0 into WB Ad Manager Pro, which charges inside its own database transactions (memberships, featured listings).

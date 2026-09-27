@@ -18,8 +18,9 @@ defined( 'ABSPATH' ) || exit;
  * One option per slug, `wbcom_credits_coupons_{slug}`: code => { type
  * (percent|fixed), amount (percent, or major units of the pack currency),
  * expires (Y-m-d, inclusive, '' for never), usage_limit (0 for unlimited),
- * active }. Usage is counted from paid checkouts in the Transaction_Log, so
- * it can't drift from what was actually sold.
+ * active }. Usage is counted from paid checkouts in the Transaction_Log, plus
+ * checkouts started within the hold window (usage()), so it can't drift from
+ * what was sold or be oversold by buyers checking out at the same time.
  *
  * @since 1.9.0
  */
@@ -73,8 +74,8 @@ final class Coupons {
 		if ( '' !== (string) ( $coupon['expires'] ?? '' ) && gmdate( 'Y-m-d' ) > (string) $coupon['expires'] ) {
 			return new \WP_Error( 'coupon_expired', __( 'That coupon has expired.', 'wbcom-credits-sdk' ), array( 'status' => 400 ) );
 		}
-		// ponytail: two buyers can pass the limit check at the same instant and
-		// both use the last slot; a row lock per coupon if that ever matters.
+		// The checkout route re-checks this under with_lock() and records the
+		// use before releasing it, so two buyers can't both take the last one.
 		$limit = (int) ( $coupon['usage_limit'] ?? 0 );
 		if ( $limit > 0 && self::usage( $slug, $code ) >= $limit ) {
 			return new \WP_Error( 'coupon_used_up', __( 'That coupon has been used up.', 'wbcom-credits-sdk' ), array( 'status' => 400 ) );
@@ -113,13 +114,41 @@ final class Coupons {
 	 * @return int
 	 */
 	public static function usage( string $slug, string $code ): int {
-		return Transaction_Log::count_transactions(
+		$paid = Transaction_Log::count_transactions(
 			$slug,
 			array(
 				'kind'   => Transaction_Log::KIND_CHECKOUT,
 				'coupon' => $code,
 			)
 		);
+
+		/**
+		 * Seconds an unpaid checkout holds a use of a limited coupon.
+		 *
+		 * A use is otherwise counted only once paid, so every buyer who
+		 * started checkout before the first paid could take the last use.
+		 * An abandoned checkout releases its hold after this long. A buyer
+		 * who pays later is still credited.
+		 *
+		 * @since 1.9.2
+		 * @param int $seconds Default one hour.
+		 */
+		$hold = (int) apply_filters( 'wbcom_credits_coupon_hold_seconds', HOUR_IN_SECONDS );
+
+		return $paid + Pending_Checkouts::coupon_holds( $slug, $code, time() - max( 0, $hold ) );
+	}
+
+	/**
+	 * Run $fn while holding this coupon's lock (checking and recording a use).
+	 *
+	 * @since 1.9.2
+	 * @param string   $slug Plugin slug.
+	 * @param string   $code Upper-case code.
+	 * @param callable $fn   Work.
+	 * @return mixed What $fn returned, or false when the lock timed out.
+	 */
+	public static function with_lock( string $slug, string $code, callable $fn ): mixed {
+		return \Wbcom\Credits\Ledger::with_lock( 'coupon|' . sanitize_key( $slug ) . '|' . strtoupper( $code ), $fn );
 	}
 
 	/**

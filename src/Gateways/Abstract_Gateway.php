@@ -188,88 +188,117 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			);
 		}
 
-		$orig_amount   = (int) $parent['amount_cents'];
-		$orig_credits  = (int) $parent['credits'];
-		$refunded_so_far = (int) $parent['refunded_cents'];
-		$refund_amount = $event->amount_cents > 0 ? $event->amount_cents : $orig_amount;
+		// Everything below reads and writes as one unit (1.9.2): under the
+		// buyer's lock, which is held until the transaction ends, and inside
+		// one transaction (joining the webhook's). Two refunds for one charge,
+		// or a refund and a spend, used to read the same refunded amount and
+		// balance; and a failed log write left credits revoked with no record.
+		$user_id           = (int) $parent['user_id'];
+		$refund_amount     = 0;
+		$ledger_to_revoke  = 0;
+		$credits_to_revoke = 0;
+		$ledger_id         = 0;
 
-		// Stripe's charge.refunded carries the charge's CUMULATIVE
-		// amount_refunded, not this refund's amount: two $3 refunds on a $10
-		// charge arrive as 300 then 600, and treating 600 as a new refund
-		// revoked $9 worth of credits instead of $6. Take the part not yet
-		// applied. PayPal sends each refund's own amount and leaves the flag off.
-		if ( $event->amount_is_cumulative && $event->amount_cents > 0 ) {
-			$refund_amount = $event->amount_cents - $refunded_so_far;
-		}
+		Ledger::begin();
+		$outcome = Credits::with_user_lock(
+			$slug,
+			$user_id,
+			function () use ( $slug, $event, $user_id, &$refund_amount, &$ledger_to_revoke, &$credits_to_revoke, &$ledger_id ) {
+				// Re-read under the lock: another refund for this charge may
+				// have just been applied.
+				$parent          = Transaction_Log::find_checkout( $slug, $this->get_id(), $event->session_id );
+				$orig_amount     = (int) $parent['amount_cents'];
+				$orig_credits    = (int) $parent['credits'];
+				$refunded_so_far = (int) $parent['refunded_cents'];
+				$refund_amount   = $event->amount_cents > 0 ? $event->amount_cents : $orig_amount;
 
-		// Clamp so a misbehaving provider can't refund more than was captured.
-		$refund_amount = min( $refund_amount, $orig_amount - $refunded_so_far );
-		if ( $refund_amount <= 0 ) {
+				// Stripe's charge.refunded carries the charge's CUMULATIVE
+				// amount_refunded, not this refund's amount: two $3 refunds on a
+				// $10 charge arrive as 300 then 600. Take the part not yet
+				// applied. PayPal sends each refund's own amount.
+				if ( $event->amount_is_cumulative && $event->amount_cents > 0 ) {
+					$refund_amount = $event->amount_cents - $refunded_so_far;
+				}
+
+				// Clamp so a misbehaving provider can't refund more than was captured.
+				$refund_amount = min( $refund_amount, $orig_amount - $refunded_so_far );
+				if ( $refund_amount <= 0 ) {
+					return 'already_fully_refunded';
+				}
+
+				// Work in LEDGER units (minor units for a money consumer):
+				// prorating a major-unit credit count floored away the cents.
+				$is_money         = Credits::is_money( $slug );
+				$orig_ledger      = $is_money
+					? \Wbcom\Credits\Money::to_minor( $orig_credits, Credits::resolve_money_currency( $slug ) )
+					: $orig_credits;
+				$ledger_to_revoke = $orig_amount > 0
+					? (int) floor( $orig_ledger * $refund_amount / $orig_amount )
+					: 0;
+
+				// A refund only takes back what the buyer has not spent (1.8.0
+				// refund policy): cap at the current balance, read live and
+				// locking under this lock.
+				if ( $ledger_to_revoke > 0 ) {
+					$ledger_to_revoke = max( 0, min( $ledger_to_revoke, Credits::get_balance( $slug, $user_id ) ) );
+				}
+
+				// The credit count the gateway hooks and the log have always carried.
+				$credits_to_revoke = $is_money
+					? (int) floor( \Wbcom\Credits\Money::to_major( $ledger_to_revoke, Credits::resolve_money_currency( $slug ) ) )
+					: $ledger_to_revoke;
+
+				if ( $ledger_to_revoke > 0 ) {
+					$refund_note = sprintf( 'gateway:%s:refund:%s', $this->get_id(), $event->session_id );
+					$ledger_id   = Credits::adjust( $slug, $user_id, -$ledger_to_revoke, $refund_note, 'gateway_refund', $refund_note );
+					if ( false === $ledger_id ) {
+						return 'refund_adjust_failed';
+					}
+				}
+
+				$logged = Transaction_Log::insert_refund(
+					array(
+						'slug'         => $slug,
+						'gateway'      => $this->get_id(),
+						'session_id'   => $event->session_id,
+						'event_id'     => $event->event_id,
+						'user_id'      => $user_id,
+						'credits'      => -$credits_to_revoke,
+						'amount_cents' => $refund_amount,
+						'currency'     => strtoupper( (string) $parent['currency'] ),
+						'ledger_id'    => (int) $ledger_id,
+						'parent_id'    => (int) $parent['id'],
+					)
+				);
+				if ( ! $logged || ! Transaction_Log::add_refunded_amount( $slug, (int) $parent['id'], $refund_amount ) ) {
+					return 'refund_log_failed';
+				}
+				return 'ok';
+			}
+		);
+
+		if ( 'already_fully_refunded' === $outcome ) {
+			Ledger::commit();
 			return new \WP_REST_Response( array( 'received' => true, 'noop' => 'already_fully_refunded' ), 200 );
 		}
-
-		// Work in LEDGER units throughout (minor units for a money consumer):
-		// prorating a major-unit credit count floored away the cents, so a
-		// third of a 10.00 purchase revoked 3.00 instead of 3.33.
-		$is_money     = Credits::is_money( $slug );
-		$orig_ledger  = $is_money
-			? \Wbcom\Credits\Money::to_minor( $orig_credits, Credits::resolve_money_currency( $slug ) )
-			: $orig_credits;
-		$ledger_to_revoke = $orig_amount > 0
-			? (int) floor( $orig_ledger * $refund_amount / $orig_amount )
-			: 0;
-
-		// A refund can only take back what the buyer has not already spent. The
-		// line above is the proportional share of the ORIGINAL purchase, computed
-		// from the payment alone - it has no idea whether some (or all) of it was
-		// already deducted by the consumer. Cap it to the current balance so a
-		// refund can never drive it negative. The site owner is expected to only
-		// refund the buyer's unspent balance at the provider; this cap is the
-		// SDK-side safety net, not the primary enforcement - it should not fire
-		// in the normal case.
-		if ( $ledger_to_revoke > 0 ) {
-			$ledger_to_revoke = max( 0, min( $ledger_to_revoke, Credits::get_balance( $slug, (int) $parent['user_id'] ) ) );
+		if ( 'ok' !== $outcome ) {
+			// false = the buyer's lock timed out; nothing was written. Any
+			// other value: roll back the revoke and the claim, so the
+			// provider's retry can apply it.
+			Ledger::rollback();
+			return new \WP_REST_Response( array( 'error' => false === $outcome ? 'account_busy' : $outcome ), 500 );
 		}
-
-		// The credit count the gateway hooks and the log have always carried.
-		$credits_to_revoke = $is_money
-			? (int) floor( \Wbcom\Credits\Money::to_major( $ledger_to_revoke, Credits::resolve_money_currency( $slug ) ) )
-			: $ledger_to_revoke;
-
-		$ledger_id = 0;
-		if ( $ledger_to_revoke > 0 ) {
-			$refund_note = sprintf( 'gateway:%s:refund:%s', $this->get_id(), $event->session_id );
-			$ledger_id   = Credits::adjust( $slug, (int) $parent['user_id'], -$ledger_to_revoke, $refund_note, 'gateway_refund', $refund_note );
-			if ( false === $ledger_id ) {
-				return new \WP_REST_Response( array( 'error' => 'refund_adjust_failed' ), 500 );
-			}
-		}
-
-		Transaction_Log::insert_refund(
-			array(
-				'slug'         => $slug,
-				'gateway'      => $this->get_id(),
-				'session_id'   => $event->session_id,
-				'event_id'     => $event->event_id,
-				'user_id'      => (int) $parent['user_id'],
-				'credits'      => -$credits_to_revoke,
-				'amount_cents' => $refund_amount,
-				'currency'     => strtoupper( (string) $parent['currency'] ),
-				'ledger_id'    => (int) $ledger_id,
-				'parent_id'    => (int) $parent['id'],
-			)
-		);
-		Transaction_Log::add_refunded_amount( $slug, (int) $parent['id'], $refund_amount );
+		Ledger::commit();
 		// Event was already claimed atomically in handle_webhook(); no
 		// mark_processed() call is needed here.
 
 		// Fire the SDK's generic refund event so consumer plugins' refund
 		// consumers (audit log, outgoing webhooks, notifications) run for
 		// gateway-initiated refunds too. The gateway revokes credits via
-		// Credits::adjust(), which intentionally does NOT fire SDK actions,
-		// so without this the documented `wbcom_credits_refunded` contract
-		// would be silently skipped for every Stripe/PayPal refund. We only
-		// fire when credits were actually revoked.
+		// Credits::adjust(), which fires only wbcom_credits_adjusted, so
+		// without this the documented `wbcom_credits_refunded` contract would
+		// be skipped for every Stripe/PayPal refund. We only fire when
+		// credits were actually revoked.
 		//
 		// Signature (since 1.4.0): ($slug, $user_id, $amount, $context). The
 		// 3rd arg carries the REVOKED CREDIT COUNT (a positive int) and the
@@ -302,7 +331,8 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			 */
 			// Arg 3 is in LEDGER units, as Credits::refund() sends it: minor
 			// units for a money consumer.
-			do_action( 'wbcom_credits_refunded', $slug, (int) $parent['user_id'], $ledger_to_revoke, $context );
+			$refunded_args = array( $slug, (int) $parent['user_id'], $ledger_to_revoke, $context );
+			Ledger::after_commit( static fn () => do_action( 'wbcom_credits_refunded', ...$refunded_args ) );
 		}
 
 		/**
@@ -320,7 +350,8 @@ abstract class Abstract_Gateway implements GatewayInterface {
 		 * @param string $gateway_id
 		 * @param string $session_id
 		 */
-		do_action( 'wbcom_credits_gateway_refund', $slug, (int) $parent['user_id'], $credits_to_revoke, (int) $ledger_id, $this->get_id(), $event->session_id );
+		$gateway_refund_args = array( $slug, (int) $parent['user_id'], $credits_to_revoke, (int) $ledger_id, $this->get_id(), $event->session_id );
+		Ledger::after_commit( static fn () => do_action( 'wbcom_credits_gateway_refund', ...$gateway_refund_args ) );
 
 		return new \WP_REST_Response(
 			array(

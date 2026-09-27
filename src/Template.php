@@ -2,10 +2,11 @@
 /**
  * Template loader — locate and render reusable SDK templates.
  *
- * Consuming plugins call Template::get() to render a shared UI fragment
- * (admin Credits tab, Transactions page, dashboard widgets, etc.) instead
- * of rebuilding the same markup in every plugin. Themes can override any
- * template by dropping a file in their theme.
+ * Renders the templates the SDK ships: frontend/receipt.php and
+ * admin/gateways-section.php (1.9.x). There are no admin Credits tab,
+ * Transactions page or dashboard templates yet; consumers render those in
+ * their own admin with Admin_Form_Renderer, Pack_Admin_Renderer and
+ * Coupons. Themes can override a template by dropping a file in their theme.
  *
  * Lookup precedence:
  *   1. {theme}/wbcom-credits/{plugin_slug}/{name}.php  — plugin-specific override

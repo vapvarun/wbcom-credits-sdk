@@ -109,7 +109,8 @@ final class Expiry {
 						 * @param int    $remaining Credits removed.
 						 * @param int    $lot_id    Top-up ledger row id.
 						 */
-						do_action( 'wbcom_credits_expired', $slug, $user_id, $remaining, (int) $lot['id'] );
+						$expired_args = array( $slug, $user_id, $remaining, (int) $lot['id'] );
+						Ledger::after_commit( static fn () => do_action( 'wbcom_credits_expired', ...$expired_args ) );
 					}
 				}
 			);

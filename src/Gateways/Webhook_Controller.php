@@ -203,6 +203,42 @@ final class Webhook_Controller {
 			return $order;
 		}
 
+		// A coupon with a usage limit is checked again and its use recorded
+		// under a per-coupon lock (1.9.2): the free path records the order,
+		// the paid path stages the checkout (a one-hour hold), before the next
+		// buyer of the same code can check. Two buyers used to both pass the
+		// check for the last use.
+		$start = function () use ( $gateway, $order, $user_id, $return_url ) {
+			return $this->start_checkout( $gateway, $order, $user_id, $return_url );
+		};
+		if ( '' === $order['coupon'] ) {
+			return $start();
+		}
+		$result = Coupons::with_lock(
+			$this->slug,
+			$order['coupon'],
+			function () use ( $start, $order ) {
+				$still = Coupons::find( $this->slug, $order['coupon'] );
+				return is_wp_error( $still ) ? $still : $start();
+			}
+		);
+		if ( false === $result ) {
+			return new \WP_Error( 'coupon_busy', __( 'Someone else is using this coupon right now. Please try again.', 'wbcom-credits-sdk' ), array( 'status' => 409 ) );
+		}
+		return $result;
+	}
+
+	/**
+	 * Credit a free order, or start the gateway checkout for a paid one.
+	 *
+	 * @since 1.9.2
+	 * @param GatewayInterface     $gateway    Gateway.
+	 * @param array<string, mixed> $order      Order::build() result.
+	 * @param int                  $user_id    Buyer.
+	 * @param string               $return_url Where to send the buyer back.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	private function start_checkout( GatewayInterface $gateway, array $order, int $user_id, string $return_url ) {
 		// A coupon that covers the whole price: nothing to collect, so no
 		// gateway. Credited and recorded like any paid order.
 		if ( $order['total'] <= 0 ) {
