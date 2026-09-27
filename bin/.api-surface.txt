@@ -67,41 +67,41 @@ Consumer.php:324 — public function record( int $item_id ): array
 Consumer.php:345 — public function set_state( int $item_id, string $state, int $cost ): void
 Consumer.php:356 — public function meta_key(): string
 Credits.php:44 — public static function get_balance( string $slug, int $user_id ): int
-Credits.php:79 — public static function get_ledger( string $slug, int $user_id, int $limit = 50, int $offset = 0 ): array
-Credits.php:92 — public static function count_ledger( string $slug, int $user_id ): int
-Credits.php:104 — public static function is_enabled( string $slug ): bool
-Credits.php:135 — public static function checkout_enabled( string $slug ): bool
-Credits.php:169 — public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false
-Credits.php:208 — public static function hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
-Credits.php:251 — public static function deduct( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): bool
-Credits.php:289 — public static function refund( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
-Credits.php:359 — public static function cancel_hold( string $slug, int $user_id, int $item_id ): void
-Credits.php:377 — public static function adjust( string $slug, int $user_id, int $amount, string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false
-Credits.php:422 — public static function with_user_lock( string $slug, int $user_id, callable $fn ): mixed
-Credits.php:452 — public static function topup_once( string $slug, string $source, string $event_id, int $user_id, int $amount, string $note = '' ): int|false|null
-Credits.php:484 — public static function try_hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
-Credits.php:517 — public static function spend( string $slug, int $user_id, int $amount, int $item_id = 0, string $note = '', string $reference = '', bool $allow_overdraft = false ): int|false
-Credits.php:555 — public static function settle_hold( string $slug, int $user_id, int $hold_id, int $amount = 0, string $note = '' ): int|false
-Credits.php:581 — public static function release_hold( string $slug, int $user_id, int $hold_id, string $note = '' ): int|false
-Credits.php:621 — public static function query_ledger( string $slug, array $args = array() ): array
-Credits.php:634 — public static function count_ledger_rows( string $slug, array $args = array() ): int
-Credits.php:647 — public static function sum_ledger( string $slug, array $args = array() ): int
-Credits.php:665 — public static function get_cost( string $slug, string $consumer_id, int $item_id = 0 ): int
-Credits.php:700 — public static function get_purchase_url( string $slug ): string
-Credits.php:734 — public static function cancel_hold_by_id( string $slug, int $user_id, int $hold_id ): void
-Credits.php:764 — public static function purchase_paths( string $slug ): array
-Credits.php:858 — public static function mapped_offers( string $slug ): array
-Credits.php:933 — public static function can_purchase( string $slug ): bool
-Credits.php:960 — public static function is_money( string $slug ): bool
-Credits.php:980 — public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false
-Credits.php:997 — public static function hold_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
-Credits.php:1014 — public static function deduct_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): bool
-Credits.php:1031 — public static function refund_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
-Credits.php:1049 — public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false
-Credits.php:1066 — public static function balance_money( string $slug, int $user_id, string $currency = '' ): float
-Credits.php:1082 — public static function resolve_money_currency( string $slug, string $currency = '' ): string
-Credits.php:1128 — public static function invalidate_cache( string $slug, int $user_id ): void
-Credits.php:1145 — public static function forget_balance( string $slug, int $user_id ): void
+Credits.php:85 — public static function get_ledger( string $slug, int $user_id, int $limit = 50, int $offset = 0 ): array
+Credits.php:98 — public static function count_ledger( string $slug, int $user_id ): int
+Credits.php:110 — public static function is_enabled( string $slug ): bool
+Credits.php:141 — public static function checkout_enabled( string $slug ): bool
+Credits.php:176 — public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '', int $item_id = 0 ): int|false
+Credits.php:215 — public static function hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
+Credits.php:258 — public static function deduct( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): bool
+Credits.php:296 — public static function refund( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
+Credits.php:366 — public static function cancel_hold( string $slug, int $user_id, int $item_id ): void
+Credits.php:384 — public static function adjust( string $slug, int $user_id, int $amount, string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false
+Credits.php:429 — public static function with_user_lock( string $slug, int $user_id, callable $fn ): mixed
+Credits.php:459 — public static function topup_once( string $slug, string $source, string $event_id, int $user_id, int $amount, string $note = '' ): int|false|null
+Credits.php:491 — public static function try_hold( string $slug, int $user_id, int $amount, int $item_id, string $note = '' ): int|false
+Credits.php:524 — public static function spend( string $slug, int $user_id, int $amount, int $item_id = 0, string $note = '', string $reference = '', bool $allow_overdraft = false ): int|false
+Credits.php:562 — public static function settle_hold( string $slug, int $user_id, int $hold_id, int $amount = 0, string $note = '' ): int|false
+Credits.php:588 — public static function release_hold( string $slug, int $user_id, int $hold_id, string $note = '' ): int|false
+Credits.php:628 — public static function query_ledger( string $slug, array $args = array() ): array
+Credits.php:641 — public static function count_ledger_rows( string $slug, array $args = array() ): int
+Credits.php:654 — public static function sum_ledger( string $slug, array $args = array() ): int
+Credits.php:672 — public static function get_cost( string $slug, string $consumer_id, int $item_id = 0 ): int
+Credits.php:707 — public static function get_purchase_url( string $slug ): string
+Credits.php:741 — public static function cancel_hold_by_id( string $slug, int $user_id, int $hold_id ): void
+Credits.php:771 — public static function purchase_paths( string $slug ): array
+Credits.php:865 — public static function mapped_offers( string $slug ): array
+Credits.php:940 — public static function can_purchase( string $slug ): bool
+Credits.php:967 — public static function is_money( string $slug ): bool
+Credits.php:987 — public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', ?string $expires_at = null, string $reason = 'topup', string $reference = '' ): int|false
+Credits.php:1004 — public static function hold_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
+Credits.php:1021 — public static function deduct_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): bool
+Credits.php:1038 — public static function refund_money( string $slug, int $user_id, $amount, int $item_id, string $currency = '', string $note = '' ): int|false
+Credits.php:1056 — public static function adjust_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', string $reason = 'admin_adjust', string $reference = '' ): int|false
+Credits.php:1073 — public static function balance_money( string $slug, int $user_id, string $currency = '' ): float
+Credits.php:1089 — public static function resolve_money_currency( string $slug, string $currency = '' ): string
+Credits.php:1135 — public static function invalidate_cache( string $slug, int $user_id ): void
+Credits.php:1152 — public static function forget_balance( string $slug, int $user_id ): void
 Expiry.php:29 — public const CRON_HOOK = 'wbcom_credits_expire_lots';
 Expiry.php:47 — public static function remaining( int $lot, int $balance, int $newer ): int
 Expiry.php:58 — public static function run( string $slug ): int
@@ -220,21 +220,22 @@ Ledger.php:41 — public static function table_name( string $prefix ): string
 Ledger.php:54 — public static function maybe_create_table( string $prefix ): void
 Ledger.php:107 — public static function maybe_upgrade( string $prefix ): void
 Ledger.php:169 — public static function get_balance( string $prefix, int $user_id ): int
-Ledger.php:195 — public static function get_history( string $prefix, int $user_id, int $limit = 50, int $offset = 0 ): array
-Ledger.php:221 — public static function count_for_user( string $prefix, int $user_id ): int
-Ledger.php:248 — public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '', ?string $expires_at = null, string $reason = '', string $reference = '', int $hold_id = 0 ): int|false
-Ledger.php:300 — public static function open_holds( string $prefix, int $user_id, int $item_id ): array
-Ledger.php:364 — public static function find_open_hold( string $prefix, int $user_id, int $hold_id ): ?object
-Ledger.php:404 — public static function settle( string $prefix, int $user_id, int $hold_id, int $cost = 0, string $note = '', string $reference = '' ): int|false
-Ledger.php:442 — public static function release( string $prefix, int $user_id, int $hold_id, string $note = '' ): array|false
-Ledger.php:478 — public static function deduct_with_hold_release( string $prefix, int $user_id, int $cost, int $item_id, string $note = '' ): bool
-Ledger.php:502 — public static function cancel_hold( string $prefix, int $user_id, int $item_id ): void
-Ledger.php:519 — public static function cancel_hold_by_id( string $prefix, int $user_id, int $hold_id ): void
-Ledger.php:567 — public static function begin(): void
-Ledger.php:581 — public static function commit(): void
-Ledger.php:595 — public static function rollback(): void
-Ledger.php:619 — public static function with_user_lock( string $prefix, int $user_id, callable $fn ): mixed
-Ledger.php:671 — public static function query( string $prefix, array $args = array(), string $mode = 'rows' ): array|int
+Ledger.php:201 — public static function get_history( string $prefix, int $user_id, int $limit = 50, int $offset = 0 ): array
+Ledger.php:227 — public static function count_for_user( string $prefix, int $user_id ): int
+Ledger.php:254 — public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '', ?string $expires_at = null, string $reason = '', string $reference = '', int $hold_id = 0 ): int|false
+Ledger.php:306 — public static function open_holds( string $prefix, int $user_id, int $item_id ): array
+Ledger.php:370 — public static function find_open_hold( string $prefix, int $user_id, int $hold_id ): ?object
+Ledger.php:410 — public static function settle( string $prefix, int $user_id, int $hold_id, int $cost = 0, string $note = '', string $reference = '' ): int|false
+Ledger.php:448 — public static function release( string $prefix, int $user_id, int $hold_id, string $note = '' ): array|false
+Ledger.php:484 — public static function deduct_with_hold_release( string $prefix, int $user_id, int $cost, int $item_id, string $note = '' ): bool
+Ledger.php:508 — public static function cancel_hold( string $prefix, int $user_id, int $item_id ): void
+Ledger.php:525 — public static function cancel_hold_by_id( string $prefix, int $user_id, int $hold_id ): void
+Ledger.php:573 — public static function begin(): void
+Ledger.php:587 — public static function commit(): void
+Ledger.php:601 — public static function rollback(): void
+Ledger.php:625 — public static function with_user_lock( string $prefix, int $user_id, callable $fn ): mixed
+Ledger.php:672 — public static function in_user_lock( string $prefix, int $user_id ): bool
+Ledger.php:707 — public static function query( string $prefix, array $args = array(), string $mode = 'rows' ): array|int
 Money.php:62 — public static function decimals_for( string $currency ): int
 Money.php:75 — public static function factor_for( string $currency ): int
 Money.php:90 — public static function to_minor( $amount, string $currency = 'USD' ): int

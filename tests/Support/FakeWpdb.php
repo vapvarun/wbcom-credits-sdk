@@ -89,6 +89,9 @@ final class FakeWpdb {
 	/** Statements run through query(), for assertions. @var array<int,string> */
 	public array $queries = array();
 
+	/** Statements run through get_var(), for assertions. @var array<int,string> */
+	public array $reads = array();
+
 	public function get_charset_collate(): string {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
@@ -115,6 +118,7 @@ final class FakeWpdb {
 	}
 
 	public function get_var( string $sql ): mixed {
+		$this->reads[] = $sql;
 		if ( preg_match( "/SELECT GET_LOCK\(\s*'([^']+)'/i", $sql, $m ) ) {
 			if ( '1' === $this->lock_result ) {
 				$this->locks_taken[] = $m[1];
@@ -588,6 +592,7 @@ final class FakeWpdb {
 		$this->locks            = 0;
 		$this->locks_taken      = array();
 		$this->queries          = array();
+		$this->reads            = array();
 		$this->tables           = array();
 		$this->create_table_sql = array();
 		$this->unique_keys      = array();

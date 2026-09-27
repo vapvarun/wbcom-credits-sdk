@@ -170,10 +170,16 @@ final class Ledger {
 		global $wpdb;
 		$table = self::table_name( $prefix );
 
+		// Inside the user's lock the read is a locking read: it waits for a
+		// charge another request wrote inside its own, not yet committed,
+		// transaction. A plain read would not see that row, and the named
+		// lock is already released when that request's transaction commits.
+		$lock = self::in_user_lock( $prefix, $user_id ) ? ' FOR UPDATE' : '';
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		$sum = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COALESCE( SUM( amount ), 0 ) FROM {$table} WHERE user_id = %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"SELECT COALESCE( SUM( amount ), 0 ) FROM {$table} WHERE user_id = %d{$lock}", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$user_id
 			)
 		);
@@ -618,11 +624,9 @@ final class Ledger {
 	 */
 	public static function with_user_lock( string $prefix, int $user_id, callable $fn ): mixed {
 		global $wpdb;
-		static $held = array();
 
-		// Named locks are server-wide and at most 64 characters.
-		$name = 'wbcc_' . substr( md5( self::table_name( $prefix ) ), 0, 16 ) . '_' . $user_id;
-		if ( isset( $held[ $name ] ) ) {
+		$name = self::lock_name( $prefix, $user_id );
+		if ( isset( self::$held[ $name ] ) ) {
 			return $fn();
 		}
 
@@ -640,13 +644,45 @@ final class Ledger {
 			return false;
 		}
 
-		$held[ $name ] = true;
+		self::$held[ $name ] = true;
 		try {
 			return $fn();
 		} finally {
-			unset( $held[ $name ] );
+			unset( self::$held[ $name ] );
 			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 		}
+	}
+
+	/**
+	 * Named locks this request holds.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static array $held = array();
+
+	/**
+	 * Whether this request holds the user's ledger lock.
+	 *
+	 * @since 1.9.1
+	 *
+	 * @param string $prefix  Plugin prefix.
+	 * @param int    $user_id WordPress user ID.
+	 * @return bool
+	 */
+	public static function in_user_lock( string $prefix, int $user_id ): bool {
+		return isset( self::$held[ self::lock_name( $prefix, $user_id ) ] );
+	}
+
+	/**
+	 * The MySQL named lock for a user's ledger: per table (so per site),
+	 * at most 64 characters.
+	 *
+	 * @param string $prefix  Plugin prefix.
+	 * @param int    $user_id WordPress user ID.
+	 * @return string
+	 */
+	private static function lock_name( string $prefix, int $user_id ): string {
+		return 'wbcc_' . substr( md5( self::table_name( $prefix ) ), 0, 16 ) . '_' . $user_id;
 	}
 
 	// -------------------------------------------------------------------------
