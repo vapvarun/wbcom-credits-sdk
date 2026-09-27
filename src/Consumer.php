@@ -327,7 +327,7 @@ final class Consumer {
 	 * @return array{state: string, cost: int}
 	 */
 	public function record( int $item_id ): array {
-		$raw = get_post_meta( $item_id, $this->state_key(), true );
+		$raw = get_post_meta( $item_id, $this->meta_key(), true );
 		return array(
 			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
 			'cost'  => is_array( $raw ) ? (int) ( $raw['cost'] ?? 0 ) : 0,
@@ -348,15 +348,17 @@ final class Consumer {
 	 * @return void
 	 */
 	public function set_state( int $item_id, string $state, int $cost ): void {
-		update_post_meta( $item_id, $this->state_key(), array( 'state' => $state, 'cost' => $cost ) );
+		update_post_meta( $item_id, $this->meta_key(), array( 'state' => $state, 'cost' => $cost ) );
 	}
 
 	/**
-	 * Post meta key for this consumer's record.
+	 * Post meta key holding this consumer's record, for consumers that look
+	 * items up in SQL (e.g. to find items charged before records existed).
 	 *
+	 * @since 1.9.0 Public.
 	 * @return string
 	 */
-	private function state_key(): string {
+	public function meta_key(): string {
 		return '_wbcom_credits_' . sanitize_key( $this->slug ) . '_' . sanitize_key( (string) $this->config['id'] );
 	}
 
