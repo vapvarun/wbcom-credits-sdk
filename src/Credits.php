@@ -593,6 +593,83 @@ final class Credits {
 	}
 
 	/**
+	 * What a member can buy through mapped store items (WooCommerce products,
+	 * PMPro levels, MemberPress memberships), with where to buy each.
+	 *
+	 * purchase_paths() says whether a mapping exists; this lists them, so a
+	 * consumer's credits screen can show "10 credits - Starter pack" with a
+	 * link instead of a bare button. Only items of available adapters with a
+	 * link are listed.
+	 *
+	 * @since 1.9.0
+	 * @param string $slug Plugin slug.
+	 * @return array<int, array{adapter: string, item_id: string, credits: int, label: string, url: string}>
+	 */
+	public static function mapped_offers( string $slug ): array {
+		$registry = new Adapters\AdapterRegistry( $slug, self::get_prefix( $slug ) );
+		$mappings = get_option( $slug . '_credit_mappings', array() );
+		$rows     = array();
+
+		foreach ( ( is_array( $mappings ) ? $mappings : array() ) as $key => $mapping ) {
+			if ( is_array( $mapping ) && isset( $mapping['adapter'], $mapping['item_id'] ) ) {
+				$rows[] = array( (string) $mapping['adapter'], (string) $mapping['item_id'], (int) ( $mapping['credits'] ?? 0 ) );
+			} elseif ( is_array( $mapping ) ) {
+				foreach ( $mapping as $item_id => $credits ) {
+					$rows[] = array( (string) $key, (string) $item_id, (int) $credits );
+				}
+			}
+		}
+
+		$offers = array();
+		foreach ( $rows as list( $adapter_id, $item_id, $credits ) ) {
+			$adapter = $registry->get( $adapter_id );
+			if ( $credits <= 0 || ! $adapter || ! $adapter->is_available() ) {
+				continue;
+			}
+
+			$label = get_the_title( (int) $item_id );
+			$url   = '';
+			switch ( $adapter_id ) {
+				case 'woocommerce':
+				case 'woo_subscriptions':
+				case 'memberpress':
+					$url = (string) get_permalink( (int) $item_id );
+					break;
+				case 'pmpro':
+					$level = function_exists( 'pmpro_getLevel' ) ? pmpro_getLevel( (int) $item_id ) : null;
+					$label = $level ? (string) $level->name : $label;
+					$url   = function_exists( 'pmpro_url' ) ? (string) pmpro_url( 'checkout', '?pmpro_level=' . (int) $item_id ) : '';
+					break;
+			}
+
+			/**
+			 * Filter where a mapped item is bought (e.g. for a custom adapter).
+			 *
+			 * @since 1.9.0
+			 *
+			 * @param string $url        Purchase URL ('' hides the offer).
+			 * @param string $adapter_id Adapter id.
+			 * @param string $item_id    Mapped item id.
+			 * @param string $slug       Plugin slug.
+			 */
+			$url = (string) apply_filters( 'wbcom_credits_offer_url', $url, $adapter_id, $item_id, $slug );
+			if ( '' === $url ) {
+				continue;
+			}
+
+			$offers[] = array(
+				'adapter' => $adapter_id,
+				'item_id' => $item_id,
+				'credits' => $credits,
+				'label'   => '' !== $label ? $label : $adapter->get_label(),
+				'url'     => $url,
+			);
+		}
+
+		return $offers;
+	}
+
+	/**
 	 * Whether ANY real purchase route is live.
 	 *
 	 * Convenience over `purchase_paths()` for the common gate. Prefer
