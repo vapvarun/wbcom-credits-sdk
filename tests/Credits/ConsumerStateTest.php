@@ -128,7 +128,7 @@ namespace Wbcom\Credits\Tests\Credits {
 		}
 
 		/** @var int Cost the repricable consumer charges. */
-		public static int $price = 10;
+		public static int|float $price = 10;
 
 		private function priced(): Consumer {
 			return new Consumer( self::SLUG, 'cst', array( 'id' => 'listing', 'label' => 'Listing', 'cost' => static fn () => self::$price ) );
@@ -273,6 +273,32 @@ namespace Wbcom\Credits\Tests\Credits {
 			$this->assertTrue( $this->consumer()->settle_item( self::ITEM ) );
 
 			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ), 'Charged the 10.00 held, once.' );
+		}
+		public function test_a_money_cost_keeps_its_cents(): void {
+			Credits::topup_money( self::SLUG, self::USER, 10.0, '', 'seed' );
+			$c = new Consumer( self::SLUG, 'cst', array( 'id' => 'listing', 'label' => 'Listing', 'cost' => 2.5 ) );
+
+			$c->reserve_item( self::ITEM );
+			$c->settle_item( self::ITEM );
+
+			$this->assertSame( 7.5, Credits::balance_money( self::SLUG, self::USER ), 'A 2.50 fee charges 2.50, not 2.00.' );
+			$this->assertSame( 2.5, $c->record( self::ITEM )['cost'] );
+		}
+
+		public function test_a_money_reprice_by_cents_charges_the_cents(): void {
+			Credits::topup_money( self::SLUG, self::USER, 10.0, '', 'seed' );
+			self::$price = 2.4;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+			$c->settle_item( self::ITEM );
+
+			self::$price = 2.5;
+			$this->assertTrue( $c->reprice_item( self::ITEM ) );
+			$this->assertSame( 7.5, Credits::balance_money( self::SLUG, self::USER ), '0.10 more, exactly.' );
+
+			self::$price = 2.5;
+			$this->assertTrue( $c->reprice_item( self::ITEM ), 'Same price: nothing to do.' );
+			$this->assertSame( 7.5, Credits::balance_money( self::SLUG, self::USER ) );
 		}
 	}
 }

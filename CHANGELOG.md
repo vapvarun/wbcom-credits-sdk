@@ -2,6 +2,12 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.4] - September 2026
+
+### Fixed
+
+- **Consumer costs keep their cents on a money consumer.** `Consumer::resolve_cost()` cast the cost to an int, so a 2.50 listing fee was held and charged as 2.00. On a money consumer the cost is now an amount of money rounded to the currency's decimals. Price changes (`reprice_item()`) and the affordability check are compared in minor units, so 2.40 to 2.50 charges exactly 0.10. `record()` / `set_state()` accept and return decimals; whole amounts stay ints, as before. Token consumers are unchanged.
+
 ## [1.9.3] - September 2026
 
 ### Fixed

@@ -63,9 +63,9 @@ Consumer.php:142 — public function reserve_item( int $item_id ): bool
 Consumer.php:189 — public function settle_item( int $item_id ): bool
 Consumer.php:224 — public function release_item( int $item_id ): bool
 Consumer.php:262 — public function reprice_item( int $item_id ): bool
-Consumer.php:324 — public function record( int $item_id ): array
-Consumer.php:345 — public function set_state( int $item_id, string $state, int $cost ): void
-Consumer.php:356 — public function meta_key(): string
+Consumer.php:327 — public function record( int $item_id ): array
+Consumer.php:348 — public function set_state( int $item_id, string $state, int|float $cost ): void
+Consumer.php:359 — public function meta_key(): string
 Credits.php:44 — public static function get_balance( string $slug, int $user_id ): int
 Credits.php:85 — public static function get_ledger( string $slug, int $user_id, int $limit = 50, int $offset = 0 ): array
 Credits.php:98 — public static function count_ledger( string $slug, int $user_id ): int

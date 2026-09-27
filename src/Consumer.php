@@ -41,7 +41,7 @@ final class Consumer {
 	/**
 	 * Consumer configuration.
 	 *
-	 * @var array{id: string, label: string, cost: int|callable, hold_on: string, deduct_on: string, refund_on: string}
+	 * @var array{id: string, label: string, cost: int|float|callable, hold_on: string, deduct_on: string, refund_on: string}
 	 */
 	private array $config;
 
@@ -160,12 +160,12 @@ final class Consumer {
 				// A free item records a zero hold, so moving it to a paid tier
 				// later reprices from 0 and charges the full difference.
 				$cost = max( 0, $this->resolve_cost( $item_id ) );
-				if ( 0 === $cost ) {
+				if ( 0 === $this->units( $cost ) ) {
 					$this->set_state( $item_id, 'held', 0 );
 					return true;
 				}
 
-				if ( $this->current_balance( $user_id ) < $cost ) {
+				if ( $this->units( $this->current_balance( $user_id ) ) < $this->units( $cost ) ) {
 					return false;
 				}
 
@@ -278,13 +278,16 @@ final class Consumer {
 
 				$cost  = max( 0, $this->resolve_cost( $item_id ) );
 				$delta = $cost - $record['cost'];
-				if ( 0 === $delta ) {
+				// Compared in ledger units: money costs carry decimals, and
+				// 2.5 - 2.4 is not exactly 0.1 in floating point.
+				$delta_units = $this->units( $cost ) - $this->units( $record['cost'] );
+				if ( 0 === $delta_units ) {
 					return true;
 				}
 
 				$label = $this->config['label'];
-				if ( $delta > 0 ) {
-					if ( $this->current_balance( $user_id ) < $delta ) {
+				if ( $delta_units > 0 ) {
+					if ( $this->units( $this->current_balance( $user_id ) ) < $delta_units ) {
 						return false;
 					}
 					if ( ! $this->reserve( $user_id, $delta, $item_id, $label . ' — price change held' ) ) {
@@ -297,7 +300,7 @@ final class Consumer {
 					// A hold can't be partly released: release it and hold
 					// the new, lower price (always affordable, under the lock).
 					$this->release_holds( $user_id, $item_id, $label . ' — price change released' );
-					if ( $cost > 0 && ! $this->reserve( $user_id, $cost, $item_id, $label . ' — credits held' ) ) {
+					if ( $this->units( $cost ) > 0 && ! $this->reserve( $user_id, $cost, $item_id, $label . ' — credits held' ) ) {
 						return false;
 					}
 				} else {
@@ -319,13 +322,13 @@ final class Consumer {
 	 * @since 1.9.0 Public.
 	 *
 	 * @param int $item_id Post/item ID.
-	 * @return array{state: string, cost: int}
+	 * @return array{state: string, cost: int|float} Cost in resolve_cost() units: credits, or money (may have decimals) on a money consumer.
 	 */
 	public function record( int $item_id ): array {
 		$raw = get_post_meta( $item_id, $this->meta_key(), true );
 		return array(
 			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
-			'cost'  => is_array( $raw ) ? (int) ( $raw['cost'] ?? 0 ) : 0,
+			'cost'  => $this->normalise( is_array( $raw ) ? ( $raw['cost'] ?? 0 ) : 0 ),
 		);
 	}
 
@@ -339,11 +342,11 @@ final class Consumer {
 	 *
 	 * @param int    $item_id Post/item ID.
 	 * @param string $state   held | settled | released.
-	 * @param int    $cost    Amount held, in resolve_cost() units.
+	 * @param int|float $cost Amount held, in resolve_cost() units (decimals allowed on a money consumer since 1.9.4).
 	 * @return void
 	 */
-	public function set_state( int $item_id, string $state, int $cost ): void {
-		update_post_meta( $item_id, $this->meta_key(), array( 'state' => $state, 'cost' => $cost ) );
+	public function set_state( int $item_id, string $state, int|float $cost ): void {
+		update_post_meta( $item_id, $this->meta_key(), array( 'state' => $state, 'cost' => $this->normalise( $cost ) ) );
 	}
 
 	/**
@@ -384,12 +387,12 @@ final class Consumer {
 	 * @since 1.0.0
 	 *
 	 * @param int    $user_id WordPress user ID.
-	 * @param int    $cost    Cost in the unit resolve_cost() returns (major credits).
-	 * @param int    $item_id Item ID.
-	 * @param string $note    Ledger note.
+	 * @param int|float $cost    Cost in the unit resolve_cost() returns.
+	 * @param int       $item_id Item ID.
+	 * @param string    $note    Ledger note.
 	 * @return bool Whether the hold was written.
 	 */
-	private function reserve( int $user_id, int $cost, int $item_id, string $note ): bool {
+	private function reserve( int $user_id, int|float $cost, int $item_id, string $note ): bool {
 		if ( Credits::is_money( $this->slug ) ) {
 			return false !== Credits::hold_money( $this->slug, $user_id, (float) $cost, $item_id, '', $note );
 		}
@@ -442,34 +445,65 @@ final class Consumer {
 	 * @since 1.9.0
 	 *
 	 * @param int    $user_id WordPress user ID.
-	 * @param int    $amount  Amount in the unit resolve_cost() returns.
-	 * @param int    $item_id Item ID.
-	 * @param string $note    Ledger note.
+	 * @param int|float $amount  Amount in the unit resolve_cost() returns.
+	 * @param int       $item_id Item ID.
+	 * @param string    $note    Ledger note.
 	 * @return void
 	 */
-	private function give_back( int $user_id, int $amount, int $item_id, string $note ): void {
+	private function give_back( int $user_id, int|float $amount, int $item_id, string $note ): void {
 		if ( Credits::is_money( $this->slug ) ) {
 			Credits::refund_money( $this->slug, $user_id, (float) $amount, $item_id, '', $note );
 			return;
 		}
-		Credits::refund( $this->slug, $user_id, $amount, $item_id, $note );
+		Credits::refund( $this->slug, $user_id, (int) $amount, $item_id, $note );
 	}
 
 	/**
-	 * Resolve the credit cost — supports fixed int or callable.
+	 * Resolve the cost — a number or a callable.
+	 *
+	 * Credits on a token consumer (whole numbers). On a money consumer, an
+	 * amount of money that may have decimals: a 2.50 fee used to be cast to
+	 * int and charged as 2.00 (1.9.4).
 	 *
 	 * @since 1.0.0
+	 * @since 1.9.4 Decimals kept on a money consumer.
 	 *
 	 * @param int $item_id Item ID for dynamic cost lookups.
-	 * @return int Credit cost.
+	 * @return int|float Cost.
 	 */
-	private function resolve_cost( int $item_id ): int {
+	private function resolve_cost( int $item_id ): int|float {
 		$cost = $this->config['cost'];
 
-		if ( is_callable( $cost ) ) {
-			return (int) call_user_func( $cost, $item_id );
-		}
+		return $this->normalise( is_callable( $cost ) ? call_user_func( $cost, $item_id ) : $cost );
+	}
 
-		return (int) $cost;
+	/**
+	 * A cost as this consumer counts it: a whole number of credits, or an
+	 * amount of money rounded to the currency's decimals.
+	 *
+	 * @param mixed $cost Raw cost.
+	 * @return int|float
+	 */
+	private function normalise( $cost ): int|float {
+		if ( ! Credits::is_money( $this->slug ) ) {
+			return (int) $cost;
+		}
+		$currency = Credits::resolve_money_currency( $this->slug );
+		$amount   = Money::to_major( Money::to_minor( is_numeric( $cost ) ? $cost : 0, $currency ), $currency );
+
+		// Whole amounts stay ints, as records before 1.9.4 held them.
+		return floor( $amount ) === $amount ? (int) $amount : $amount;
+	}
+
+	/**
+	 * A cost or balance in ledger units, for exact comparison.
+	 *
+	 * @param int|float $amount Amount in resolve_cost() units.
+	 * @return int
+	 */
+	private function units( int|float $amount ): int {
+		return Credits::is_money( $this->slug )
+			? Money::to_minor( $amount, Credits::resolve_money_currency( $this->slug ) )
+			: (int) $amount;
 	}
 }
