@@ -4,6 +4,8 @@ These rules apply to every consumer listed in [CONSUMERS.md](../CONSUMERS.md)
 (WB Ad Manager Pro, WB Listora, WP Career Board Pro, WPConnectPress) and to any
 new one. They exist because consumers kept fixing the same money bugs in their
 own code, and the fixes drifted apart. See [AUDIT-2026-09-27.md](AUDIT-2026-09-27.md).
+For the how-to (bundle, register, take money in, charge, refund, report), see
+[INTEGRATION-GUIDE.md](INTEGRATION-GUIDE.md).
 
 ## 1. Fix it upstream, never in your copy
 - `libs/wbcom-credits-sdk/` is a vendored copy. Never edit it by hand.

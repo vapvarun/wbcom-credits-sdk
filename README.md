@@ -14,8 +14,10 @@ The SDK is **the** credit infrastructure for Wbcom plugins. Two responsibilities
 
 ## Quick Start — 5 Lines
 
+> Adding the SDK to a plugin? Follow **[docs/INTEGRATION-GUIDE.md](docs/INTEGRATION-GUIDE.md)** step by step, and keep **[docs/CONSUMER-RULES.md](docs/CONSUMER-RULES.md)** open while you do.
+
 ```php
-// In your plugin's main file, BEFORE including the SDK:
+// In your plugin's main file:
 add_action( 'wbcom_credits_sdk_registry', function ( $registry ) {
     $registry->register( [
         'slug'      => 'my-plugin',
@@ -41,10 +43,9 @@ add_action( 'wbcom_credits_sdk_registry', function ( $registry ) {
     ] );
 } );
 
-// Include the SDK (conditional — handles version conflicts)
-if ( file_exists( __DIR__ . '/vendor/wbcom-credits-sdk/wbcom-credits-sdk.php' ) ) {
-    require_once __DIR__ . '/vendor/wbcom-credits-sdk/wbcom-credits-sdk.php';
-}
+// Include the bundled SDK while the plugin file runs (the newest copy on
+// the site serves every class; see docs/INTEGRATION-GUIDE.md, step 2).
+require_once __DIR__ . '/libs/wbcom-credits-sdk/wbcom-credits-sdk.php';
 ```
 
 That's it. The SDK auto-creates the DB table, wires the hold/deduct/refund hooks, registers REST endpoints, and initializes payment adapters.
