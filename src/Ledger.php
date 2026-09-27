@@ -63,12 +63,14 @@ final class Ledger {
 			entry_type VARCHAR(20) NOT NULL,
 			amount INT NOT NULL,
 			note VARCHAR(255) NOT NULL DEFAULT '',
+			expires_at DATETIME NULL DEFAULT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id),
 			INDEX idx_user_id (user_id),
 			INDEX idx_entry_type (entry_type),
 			INDEX idx_item_id (item_id),
-			INDEX idx_user_item_type (user_id, item_id, entry_type)
+			INDEX idx_user_item_type (user_id, item_id, entry_type),
+			INDEX idx_expiry (entry_type, expires_at)
 		) {$charset_collate};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -76,23 +78,28 @@ final class Ledger {
 	}
 
 	/**
-	 * Add the item lookups' indexes to a ledger created before 1.9.0.
-	 *
-	 * Reconcilers and per-item history look rows up by item_id, which was a
-	 * full scan on a large ledger.
+	 * Bring a ledger created before 1.9.0 up to date: the item lookups'
+	 * indexes (reconcilers and per-item history were full scans on a large
+	 * ledger) and the top-up expiry column.
 	 *
 	 * @since 1.9.0
 	 *
 	 * @param string $prefix Plugin prefix.
 	 * @return void
 	 */
-	public static function maybe_add_indexes( string $prefix ): void {
+	public static function maybe_upgrade( string $prefix ): void {
 		global $wpdb;
 		$table = self::table_name( $prefix );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( null === $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", 'expires_at' ) ) ) {
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN expires_at DATETIME NULL DEFAULT NULL" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		}
 
 		$indexes = array(
 			'idx_item_id'        => '(item_id)',
 			'idx_user_item_type' => '(user_id, item_id, entry_type)',
+			'idx_expiry'         => '(entry_type, expires_at)',
 		);
 		foreach ( $indexes as $name => $columns ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
@@ -182,25 +189,29 @@ final class Ledger {
 	 * @param string $entry_type One of: topup, hold, deduction, refund.
 	 * @param int    $amount     Signed integer (negative for debits).
 	 * @param int    $item_id    Associated item ID (0 if not applicable).
-	 * @param string $note       Human-readable note.
+	 * @param string      $note       Human-readable note.
+	 * @param string|null $expires_at UTC 'Y-m-d H:i:s' when a top-up's credits lapse (since 1.9.0).
 	 * @return int|false Inserted row ID or false on failure.
 	 */
-	public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '' ): int|false {
+	public static function insert( string $prefix, int $user_id, string $entry_type, int $amount, int $item_id = 0, string $note = '', ?string $expires_at = null ): int|false {
 		global $wpdb;
 		$table = self::table_name( $prefix );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
-		$result = $wpdb->insert(
-			$table,
-			array(
-				'user_id'    => $user_id,
-				'item_id'    => $item_id,
-				'entry_type' => $entry_type,
-				'amount'     => $amount,
-				'note'       => $note,
-			),
-			array( '%d', '%d', '%s', '%d', '%s' )
+		$row    = array(
+			'user_id'    => $user_id,
+			'item_id'    => $item_id,
+			'entry_type' => $entry_type,
+			'amount'     => $amount,
+			'note'       => $note,
 		);
+		$format = array( '%d', '%d', '%s', '%d', '%s' );
+		if ( null !== $expires_at ) {
+			$row['expires_at'] = $expires_at;
+			$format[]          = '%s';
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$result = $wpdb->insert( $table, $row, $format );
 
 		return false === $result ? false : (int) $wpdb->insert_id;
 	}

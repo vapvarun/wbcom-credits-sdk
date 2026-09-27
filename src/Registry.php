@@ -182,6 +182,8 @@ final class Registry {
 	 * @return void
 	 */
 	public function boot_all(): void {
+		self::boot_shared();
+
 		foreach ( $this->plugins as $slug => $config ) {
 			// Ensure the per-consumer schema is current (creates/upgrades
 			// the ledger, gateway log, and processed-events tables). Guarded
@@ -289,7 +291,7 @@ final class Registry {
 	 * @since 1.3.1
 	 * @var int
 	 */
-	private const SCHEMA_VERSION = 4;
+	private const SCHEMA_VERSION = 5;
 
 	/**
 	 * Create or upgrade the per-consumer schema, guarded by a stored
@@ -318,7 +320,7 @@ final class Registry {
 
 		// Append-only ledger (canonical balance source).
 		Ledger::maybe_create_table( $prefix );
-		Ledger::maybe_add_indexes( $prefix );
+		Ledger::maybe_upgrade( $prefix );
 
 		// Per-gateway transaction log for direct payments.
 		Gateways\Transaction_Log::maybe_create_table( $prefix );
@@ -327,6 +329,39 @@ final class Registry {
 		Gateways\Processed_Events::maybe_create_table( $prefix );
 
 		update_option( $option_key, self::SCHEMA_VERSION, false );
+	}
+
+	/**
+	 * Wire what the SDK does once per request, whatever number of plugins
+	 * registered: the printable receipt page and the two hourly sweeps
+	 * (lapsed credit lots, unclaimed paid checkouts).
+	 *
+	 * Consumers must clear both cron hooks on deactivation (Expiry::CRON_HOOK,
+	 * Gateways\Reconciler::CRON_HOOK) when no other consumer is active.
+	 *
+	 * @since 1.9.0
+	 * @return void
+	 */
+	private static function boot_shared(): void {
+		static $booted = false;
+		if ( $booted ) {
+			return;
+		}
+		$booted = true;
+
+		add_action( 'template_redirect', array( Receipt::class, 'maybe_render' ) );
+		add_action( Expiry::CRON_HOOK, array( Expiry::class, 'run_all' ) );
+		add_action( Gateways\Reconciler::CRON_HOOK, array( Gateways\Reconciler::class, 'run_all' ) );
+		add_action(
+			'init',
+			static function (): void {
+				foreach ( array( Expiry::CRON_HOOK, Gateways\Reconciler::CRON_HOOK ) as $hook ) {
+					if ( ! wp_next_scheduled( $hook ) ) {
+						wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', $hook );
+					}
+				}
+			}
+		);
 	}
 
 	/**

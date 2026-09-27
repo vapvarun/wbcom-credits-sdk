@@ -89,12 +89,18 @@ final class Transaction_Log {
 				currency VARCHAR(8) NOT NULL DEFAULT 'USD',
 				ledger_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
 				parent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+				subtotal_cents BIGINT NOT NULL DEFAULT 0,
+				discount_cents BIGINT NOT NULL DEFAULT 0,
+				tax_cents BIGINT NOT NULL DEFAULT 0,
+				coupon VARCHAR(64) NOT NULL DEFAULT '',
+				billing LONGTEXT NULL,
 				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				PRIMARY KEY (id),
 				KEY idx_session (slug, gateway, session_id),
 				KEY idx_intent (slug, gateway, payment_intent),
 				KEY idx_event (slug, gateway, event_id),
-				KEY idx_user (slug, user_id)
+				KEY idx_user (slug, user_id),
+				KEY idx_coupon (slug, coupon)
 			) {$charset};";
 			dbDelta( $sql );
 		}
@@ -105,6 +111,38 @@ final class Transaction_Log {
 		// at adding plain (non-PRIMARY/UNIQUE) KEYs. For money code we prefer an
 		// explicit, idempotent ALTER over trusting dbDelta's diffing.
 		self::ensure_intent_column( $table );
+		self::ensure_order_columns( $table );
+	}
+
+	/**
+	 * Add the 1.9.0 order columns (what was charged and for whom) to a table
+	 * created before them. Idempotent.
+	 *
+	 * @since 1.9.0
+	 * @param string $table Fully-qualified table name.
+	 * @return void
+	 */
+	private static function ensure_order_columns( string $table ): void {
+		global $wpdb;
+
+		$columns = array(
+			'subtotal_cents' => 'BIGINT NOT NULL DEFAULT 0',
+			'discount_cents' => 'BIGINT NOT NULL DEFAULT 0',
+			'tax_cents'      => 'BIGINT NOT NULL DEFAULT 0',
+			'coupon'         => "VARCHAR(64) NOT NULL DEFAULT ''",
+			'billing'        => 'LONGTEXT NULL',
+		);
+		foreach ( $columns as $column => $definition ) {
+			$has = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM `{$table}` LIKE %s", $column ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			if ( null === $has ) {
+				$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN {$column} {$definition}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+			}
+		}
+
+		$has_index = $wpdb->get_var( $wpdb->prepare( "SHOW INDEX FROM `{$table}` WHERE Key_name = %s", 'idx_coupon' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( null === $has_index ) {
+			$wpdb->query( "ALTER TABLE `{$table}` ADD KEY idx_coupon (slug, coupon)" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		}
 	}
 
 	/**
@@ -145,7 +183,8 @@ final class Transaction_Log {
 	 * @param array{
 	 *     slug:string, gateway:string, session_id:string, event_id:string,
 	 *     user_id:int, credits:int, amount_cents:int, currency:string, ledger_id:int,
-	 *     payment_intent?:string
+	 *     payment_intent?:string, subtotal_cents?:int, discount_cents?:int,
+	 *     tax_cents?:int, coupon?:string, billing?:array<string, mixed>
 	 * } $row Row data.
 	 * @return int Newly inserted row id (0 on failure).
 	 */
@@ -166,10 +205,37 @@ final class Transaction_Log {
 				'amount_cents'   => (int) ( $row['amount_cents'] ?? 0 ),
 				'currency'       => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
 				'ledger_id'      => (int) ( $row['ledger_id'] ?? 0 ),
+				'subtotal_cents' => (int) ( $row['subtotal_cents'] ?? ( $row['amount_cents'] ?? 0 ) ),
+				'discount_cents' => (int) ( $row['discount_cents'] ?? 0 ),
+				'tax_cents'      => (int) ( $row['tax_cents'] ?? 0 ),
+				'coupon'         => strtoupper( (string) ( $row['coupon'] ?? '' ) ),
+				'billing'        => empty( $row['billing'] ) ? null : wp_json_encode( $row['billing'] ),
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
+	}
+
+	/**
+	 * One checkout row by id, for receipts.
+	 *
+	 * @since 1.9.0
+	 * @param string $slug Consumer slug.
+	 * @param int    $id   Row id.
+	 * @return array<string, mixed>|null Row with `billing` decoded, or null.
+	 */
+	public static function find_by_id( string $slug, int $id ): ?array {
+		global $wpdb;
+		$table = self::table_name( self::resolve_prefix( $slug ) );
+		$row   = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d AND slug = %s AND kind = %s", $id, sanitize_key( $slug ), self::KIND_CHECKOUT ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+		if ( ! is_array( $row ) ) {
+			return null;
+		}
+		$row['billing'] = is_string( $row['billing'] ?? null ) ? (array) json_decode( $row['billing'], true ) : array();
+		return $row;
 	}
 
 	/**
@@ -366,6 +432,10 @@ final class Transaction_Log {
 		if ( ! empty( $args['user_id'] ) ) {
 			$where[]  = 'user_id = %d';
 			$params[] = (int) $args['user_id'];
+		}
+		if ( ! empty( $args['coupon'] ) ) {
+			$where[]  = 'coupon = %s';
+			$params[] = strtoupper( (string) $args['coupon'] );
 		}
 
 		return array( implode( ' AND ', $where ), $params );

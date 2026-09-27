@@ -196,7 +196,10 @@ final class Stripe extends Abstract_Gateway {
 		$event_id = (string) ( $payload['id'] ?? '' );
 		$type     = (string) ( $payload['type'] ?? '' );
 
-		if ( 'checkout.session.completed' === $type ) {
+		// Delayed payment methods (SEPA Debit, ACH, bank transfers) complete the
+		// session unpaid and confirm later with async_payment_succeeded; that
+		// event carries the same paid session, so it credits the same way.
+		if ( in_array( $type, array( 'checkout.session.completed', 'checkout.session.async_payment_succeeded' ), true ) ) {
 			$session = $payload['data']['object'] ?? array();
 			if ( ! is_array( $session ) || empty( $session['id'] ) ) {
 				return null;

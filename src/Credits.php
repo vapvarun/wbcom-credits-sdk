@@ -160,13 +160,14 @@ final class Credits {
 	 * @param string $slug    Plugin slug.
 	 * @param int    $user_id WordPress user ID.
 	 * @param int    $amount  Positive credits to add.
-	 * @param string $note    Human-readable note.
+	 * @param string      $note       Human-readable note.
+	 * @param string|null $expires_at UTC 'Y-m-d H:i:s' when these credits lapse, null for never (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function topup( string $slug, int $user_id, int $amount, string $note = '' ): int|false {
+	public static function topup( string $slug, int $user_id, int $amount, string $note = '', ?string $expires_at = null ): int|false {
 		self::invalidate_cache( $slug, $user_id );
 
-		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), 0, $note );
+		$result = Ledger::insert( self::get_prefix( $slug ), $user_id, 'topup', abs( $amount ), 0, $note, $expires_at );
 
 		if ( $result ) {
 			/**
@@ -644,10 +645,11 @@ final class Credits {
 	 * @param float|int|string $amount   Amount in major units (e.g. 147.35).
 	 * @param string           $currency Optional ISO 4217 code; falls back to the consumer's money.currency.
 	 * @param string           $note     Description.
+	 * @param string|null      $expires_at UTC 'Y-m-d H:i:s' when these credits lapse (since 1.9.0).
 	 * @return int|false Inserted row ID or false.
 	 */
-	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '' ): int|false {
-		return self::topup( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $note );
+	public static function topup_money( string $slug, int $user_id, $amount, string $currency = '', string $note = '', ?string $expires_at = null ): int|false {
+		return self::topup( $slug, $user_id, Money::to_minor( $amount, self::resolve_money_currency( $slug, $currency ) ), $note, $expires_at );
 	}
 
 	/**

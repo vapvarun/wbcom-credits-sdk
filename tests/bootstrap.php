@@ -585,3 +585,22 @@ if ( ! function_exists( 'delete_user_meta' ) ) {
 		return true;
 	}
 }
+
+if ( ! function_exists( 'sanitize_email' ) ) {
+	function sanitize_email( string $s ): string {
+		return trim( $s );
+	}
+}
+if ( ! function_exists( 'sanitize_textarea_field' ) ) {
+	function sanitize_textarea_field( string $s ): string {
+		return trim( $s );
+	}
+}
+if ( ! function_exists( '_n' ) ) {
+	function _n( string $single, string $plural, int $n, ?string $domain = null ): string {
+		return 1 === $n ? $single : $plural;
+	}
+}
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}

@@ -85,8 +85,10 @@ final class Pricing {
 				'credits'     => $credits,
 				'price_cents' => $cents,
 				'currency'    => $currency,
-				'mode'        => 'pack',
-				'pack_id'     => $pack_id,
+				'mode'         => 'pack',
+				'pack_id'      => $pack_id,
+				// Days until credits bought with this pack expire (0: never).
+				'expires_days' => max( 0, (int) ( $pack['expires_days'] ?? 0 ) ),
 			);
 		}
 

@@ -121,58 +121,27 @@ abstract class Abstract_Gateway implements GatewayInterface {
 			return new \WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 		}
 
-		// Money consumers store MINOR units in the ledger, and a credit
-		// count is a MAJOR-unit amount by definition (the same single-
-		// boundary rule 1.5.1 applied to adapter mappings — which missed
-		// this path, so every gateway purchase on a money consumer was
-		// credited at 1/minor-factor of what the buyer paid for). Token
-		// consumers take the integer verbatim, exactly as before.
-		$credits_purchased = (int) $expected['credits'];
-		$topup_note        = sprintf( 'gateway:%s:%s', $this->get_id(), $event->session_id );
-
-		$ledger_id = Credits::is_money( $slug )
-			? Credits::topup_money( $slug, (int) $expected['user_id'], $credits_purchased, '', $topup_note )
-			: Credits::topup( $slug, (int) $expected['user_id'], $credits_purchased, $topup_note );
-		if ( false === $ledger_id ) {
+		$credited = Fulfilment::credit(
+			$slug,
+			(int) $expected['user_id'],
+			(int) $expected['credits'],
+			(array) ( $expected['order'] ?? array() ),
+			$this->get_id(),
+			$event->session_id,
+			$event->event_id,
+			$event->provider_ref,
+			$event->amount_cents,
+			$event->currency
+		);
+		if ( null === $credited ) {
 			// Nothing was credited: release the session claim so the webhook
 			// retry or the buyer's return can credit it.
 			Idempotency::release( $slug, $this->get_id(), 'session:' . $event->session_id );
 			return new \WP_REST_Response( array( 'error' => 'topup_failed' ), 500 );
 		}
+		$ledger_id = $credited['ledger_id'];
 
-		Transaction_Log::insert_checkout(
-			array(
-				'slug'           => $slug,
-				'gateway'        => $this->get_id(),
-				'session_id'     => $event->session_id,
-				'payment_intent' => $event->provider_ref,
-				'event_id'       => $event->event_id,
-				'user_id'        => (int) $expected['user_id'],
-				'credits'        => (int) $expected['credits'],
-				'amount_cents'   => $event->amount_cents,
-				'currency'       => strtoupper( $event->currency ),
-				'ledger_id'      => (int) $ledger_id,
-			)
-		);
-
-		// Event was already claimed atomically in handle_webhook() before we
-		// reached this point, so no mark_processed() call is needed here.
 		Pending_Checkouts::forget( $slug, $event->session_id );
-
-		/**
-		 * Fires after a successful gateway top-up. Lets consumers ship
-		 * a confirmation email or push event to user dashboards.
-		 *
-		 * @since 1.2.0
-		 *
-		 * @param string $slug
-		 * @param int    $user_id
-		 * @param int    $credits
-		 * @param int    $ledger_id
-		 * @param string $gateway_id
-		 * @param string $session_id
-		 */
-		do_action( 'wbcom_credits_gateway_topup', $slug, (int) $expected['user_id'], (int) $expected['credits'], (int) $ledger_id, $this->get_id(), $event->session_id );
 
 		return new \WP_REST_Response(
 			array(
