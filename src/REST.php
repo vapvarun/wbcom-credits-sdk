@@ -131,7 +131,7 @@ final class REST {
 					'amount'  => array(
 						'type'              => 'integer',
 						'required'          => true,
-						'sanitize_callback' => 'intval',
+						'sanitize_callback' => static fn ( $value ): int => (int) $value,
 					),
 					'note'    => array(
 						'type'              => 'string',
