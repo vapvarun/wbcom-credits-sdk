@@ -2,6 +2,56 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - September 2026
+
+Two lines of work in one release. Spends are serialised per user, consumers can drive an item's charge directly, and checkout gains billing, coupons, tax, receipts, expiry and reconciling (found on WP Career Board Pro: ten parallel posts with credit for one made two jobs and a negative balance; auto-published, resubmitted and re-boarded jobs were free; every rejection refunded again). And the ledger design gaps behind the repeated consumer fixes are closed (`docs/AUDIT-2026-09-27.md`, found on WB Ad Manager Pro): holds are settled by id, every row says what happened, claims and credits land together, and reports read through the API. Additive except where noted under Changed.
+
+### Added
+
+- **`Credits::with_user_lock( $slug, $user_id, $fn )`** - a MySQL named lock per (ledger table, user) around "read balance, write". The balance cache is dropped on entry; nested calls for the same user run straight away; the wait is 10 seconds (filter `wbcom_credits_lock_timeout`), after which nothing is written.
+- **`Credits::try_hold()` and `Credits::spend()`** check the balance and write under that lock: a hold with an approval step, or a charge per event (a click, a renewal). Before, `hold()` inserted without looking, so every consumer wrote its own check.
+- **`Credits::settle_hold()` / `Credits::release_hold()`** act on one hold by the id `hold()` returned; the rows they write carry it (`hold_id`), so a hold is open exactly while nothing points at it.
+- **Every ledger row says what happened.** New `reason` (`purchase`, `topup`, `hold`, `hold_release`, `spend`, `refund`, `gateway_refund`, `admin_adjust`, `expiry`) and `reference` (order / session / event / lot) columns, written by every SDK path. A hold release used to be a `refund` row and a gateway refund a `deduction`, so no report could be built from the ledger. `topup()` / `topup_money()` take `$reason` / `$reference` after `$expires_at`; `adjust()` / `adjust_money()` after `$note`.
+- **`Credits::query_ledger()`, `count_ledger_rows()`, `sum_ledger()`** filter by user, item, reason, reference, hold and a UTC date range, with paging, so consumers stop querying the table.
+- **`Credits::topup_once()`** claims a payment event and credits it in one transaction; every adapter uses it.
+- **`Ledger::begin()` / `commit()` / `rollback()`** join an SDK transaction already open instead of committing it (MySQL has no nested transactions).
+- **`amount_money` on `POST /topup`** for money consumers (major units, signed); the response states its `unit`.
+- **`Consumer::reserve_item()` / `settle_item()` / `release_item()` / `reprice_item()`**, public and returning what happened. `reserve_item()` runs under the lock and refuses what the author can't afford; a released item is charged again; a free item records a zero hold so a later move to a paid tier charges the full difference. `reprice_item()` holds, settles or refunds the difference when an item's price changes. `record()`, `set_state()` and `meta_key()` are public so a consumer can seed records for items charged before they existed.
+- **`Registry::consumer( $slug, $id )`** returns the Consumer object for a registered id.
+- **`wbcom_credits_adjusted`** action from `Credits::adjust()`.
+- **Ledger schema v6 reaches existing sites.** `Ledger::maybe_create_table()` returned as soon as the table existed, so no ledger column or index added since 1.0.0 had reached an upgraded site. `Ledger::maybe_upgrade()` now adds `expires_at`, `reason`, `reference`, `hold_id` and the `idx_item_id`, `idx_user_item_type`, `idx_expiry`, `idx_user_created`, `idx_hold`, `idx_reason` keys when missing.
+
+- **Checkout: billing, coupons, tax, receipts.** `Billing` keeps the buyer's identity on the user under WooCommerce's `billing_*` keys (plus `billing_gst`), basic or full per slug; the checkout route saves what was typed and refuses an incomplete identity (`400 billing_incomplete` with `fields`). `Gateways\Order::build()` is the one money computation (pack price, coupon, tax, total); the gateway sees only the total and the parts are recorded on the Transaction_Log row (`subtotal_cents`, `discount_cents`, `tax_cents`, `coupon`, `billing` JSON snapshot). `Gateways\Coupons` (percent or amount off, expiry, usage limit counted from paid orders) and `Gateways\Checkout_Settings` (billing mode, tax rate and label, seller name/address/tax id, receipt prefix) each ship an admin renderer and sanitizer. A coupon that covers the whole price credits without a gateway. `Receipt` gives every paid order a printable page (buyer and admins only; theme-overridable template) and the data for a receipt email; `wbcom_credits_purchase_completed` fires once per paid order.
+- **`Gateways\Fulfilment::credit()`** is the one place an order becomes credits, used by webhooks, return claims, the sweep and free orders.
+- **Credit expiry.** A pack can set "credits expire after N days"; top-ups carry `expires_at` (`Credits::topup()` / `topup_money()` take it too) and an hourly sweep (`wbcom_credits_expire_lots`) writes one `expiry` row per lapsed lot for what is left of it (oldest spent first). `wbcom_credits_expired` fires.
+- **Reconcile sweep** (`wbcom_credits_reconcile_checkouts`, hourly) claims pending checkouts at their gateway, so a buyer who closed the tab before returning is still credited; pending entries live 7 days.
+- **`Credits::mapped_offers()`** lists the mapped store items a member can buy, with where to buy each (filter `wbcom_credits_offer_url`).
+- **`Support\Currencies` / `Support\Countries`**: complete ISO 4217 (with real minor units) and ISO 3166 lists, one source for every product (the countries list defers to WooCommerce when active).
+
+### Changed
+
+- **`wbcom_credits_low` fires once per crossing** (user meta flag, cleared when the balance goes back above the threshold) and on every debit path (hold, deduct, adjust). It fired on every hold at or below the threshold, so a member posting several items got an email per post. On a money consumer the threshold is money (the default 5 means 5.00, not 5 cents).
+- **`Credits::deduct()` settles an open hold or returns false.** With no open hold it wrote a release and a deduction that cancelled out: the member paid nothing and the call reported success.
+- **`cancel_hold()` and `cancel_hold_by_id()` only cancel an open hold.** `cancel_hold( $item_id )` deleted every hold on the item, including one already settled, which silently reversed that charge.
+- **`Credits::refund()` releases the item's open hold (its own amount) when there is one**, otherwise it credits the amount back as a `refund`. The `wbcom_credits_refunded` event is unchanged.
+- **`Consumer` settles and releases the item's holds by id**, each for what it holds; repricing a held item down releases it and holds the new price.
+- **Gateway claims and credits are one transaction** (webhook, return claim, `Fulfilment::credit()`). A fatal error or timeout between them kept the claim and lost the credit, and the provider's retry was then a duplicate; a failed event now rolls its claim back.
+- **Gateway refunds on money consumers are prorated in cents.** The share was floored in whole units: a third of a 10.00 purchase revoked 3.00, not 3.33.
+- `bin/audit.sh` compares public API symbol names, so a moved line or a new optional parameter is no longer reported as a breaking removal.
+- **`POST /topup` takes a signed amount.** `absint` turned -3 into +3.
+
+- **`Money` reads decimals from the currency registry**; its partial zero/three-decimal lists are gone. The pack editor's currency is a select from the registry, prices are stored in the currency's own minor units, and the custom-amount rate is entered as a price per credit.
+- **`checkout.js`** sends billing and a coupon, reports missing billing fields, and `wbcomCreditsClaim()` credits a paid checkout on return.
+- **A gateway that can't start a checkout** answers the buyer with a plain message; the provider's detail goes to the debug log.
+
+### Fixed
+
+- **Zero- and three-decimal currencies.** Pack prices were stored and PayPal amounts sent as `price * 100` / `/ 100`: a JPY 500 pack charged ¥50,000, KWD lost its third decimal.
+- **Delayed Stripe payments** (`checkout.session.async_payment_succeeded`) were never credited.
+- **A paid checkout on a site without a webhook** was never credited: nothing called the claim route on return.
+- 1.8.1's changelog said rows were stamped with `current_time( 'mysql', true )`; they are stamped with `gmdate( 'Y-m-d H:i:s' )` (the same UTC value), so the SDK also runs without WordPress loaded.
+- `tests/loader-election-check.php` rewrote a literal `'1.7.1'` that stopped existing at 1.8.0, so both fake copies announced the same version and the check failed.
+
 ## [1.8.1] - September 2026
 
 ### Fixed

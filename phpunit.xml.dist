@@ -29,6 +29,9 @@
         <testsuite name="performance">
             <directory>tests/Performance</directory>
         </testsuite>
+        <testsuite name="loader">
+            <directory>tests/Loader</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

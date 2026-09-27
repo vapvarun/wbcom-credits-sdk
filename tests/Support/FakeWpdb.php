@@ -22,6 +22,9 @@ namespace Wbcom\Credits\Tests\Support;
 
 final class FakeWpdb {
 
+	/** @var int Named locks granted. */
+	public int $locks = 0;
+
 	public string $prefix = 'wp_';
 
 	public int $insert_id = 0;
@@ -70,6 +73,22 @@ final class FakeWpdb {
 	 */
 	public array $table_indexes = array();
 
+	/**
+	 * Tables as they were at START TRANSACTION; ROLLBACK restores them.
+	 *
+	 * @var array<string, array<int, array<string,mixed>>>|null
+	 */
+	private ?array $snapshot = null;
+
+	/** What GET_LOCK returns: '1' acquired, '0' timed out. */
+	public string $lock_result = '1';
+
+	/** Named locks taken, in order (for assertions). @var array<int,string> */
+	public array $locks_taken = array();
+
+	/** Statements run through query(), for assertions. @var array<int,string> */
+	public array $queries = array();
+
 	public function get_charset_collate(): string {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
@@ -96,6 +115,24 @@ final class FakeWpdb {
 	}
 
 	public function get_var( string $sql ): mixed {
+		if ( preg_match( "/SELECT GET_LOCK\(\s*'([^']+)'/i", $sql, $m ) ) {
+			if ( '1' === $this->lock_result ) {
+				$this->locks_taken[] = $m[1];
+				++$this->locks;
+			}
+			return $this->lock_result;
+		}
+		if ( preg_match( '/SELECT RELEASE_LOCK/i', $sql ) ) {
+			return '1';
+		}
+		// Ledger::query() count / sum: WHERE 1=1 AND ...
+		if ( preg_match( '/SELECT\s+(COUNT\(\*\)|COALESCE\(\s*SUM\(\s*amount\s*\)\s*,\s*0\s*\))\s+FROM\s+(\S+)\s+WHERE\s+1=1(.*)$/is', $sql, $m ) ) {
+			$rows = $this->filter_where( $m[2], $m[3] );
+			if ( 0 === stripos( $m[1], 'COUNT' ) ) {
+				return (string) count( $rows );
+			}
+			return (string) array_sum( array_map( static fn ( $r ) => (int) ( $r['amount'] ?? 0 ), $rows ) );
+		}
 		if ( preg_match( "/SHOW TABLES LIKE '([^']+)'/i", $sql, $m ) ) {
 			return isset( $this->tables[ $m[1] ] ) ? $m[1] : null;
 		}
@@ -144,6 +181,23 @@ final class FakeWpdb {
 	}
 
 	public function get_results( string $sql ): array {
+		// Ledger::open_holds(): one item's rows, oldest first, as objects.
+		if ( preg_match( '/FROM\s+(\S+)\s+WHERE\s+user_id\s*=\s*(\d+)\s+AND\s+item_id\s*=\s*(\d+)\s+ORDER BY id ASC/i', $sql, $m ) ) {
+			$rows = array_values(
+				array_filter(
+					$this->tables[ $m[1] ] ?? array(),
+					static fn ( $r ) => (int) ( $r['user_id'] ?? 0 ) === (int) $m[2] && (int) ( $r['item_id'] ?? 0 ) === (int) $m[3]
+				)
+			);
+			usort( $rows, static fn ( $a, $b ) => (int) $a['id'] <=> (int) $b['id'] );
+			return array_map( array( $this, 'as_ledger_object' ), $rows );
+		}
+		// Ledger::query() rows: WHERE 1=1 AND ... ORDER BY id DESC|ASC LIMIT n OFFSET m.
+		if ( preg_match( '/FROM\s+(\S+)\s+WHERE\s+1=1(.*?)\s+ORDER BY id (ASC|DESC)\s+LIMIT\s+(\d+)\s+OFFSET\s+(\d+)/is', $sql, $m ) ) {
+			$rows = $this->filter_where( $m[1], $m[2] );
+			usort( $rows, static fn ( $a, $b ) => 'ASC' === strtoupper( $m[3] ) ? (int) $a['id'] <=> (int) $b['id'] : (int) $b['id'] <=> (int) $a['id'] );
+			return array_map( array( $this, 'as_ledger_object' ), array_slice( $rows, (int) $m[5], (int) $m[4] ) );
+		}
 		if ( preg_match( '/FROM\s+(\S+)\s+WHERE\s+user_id\s*=\s*(\d+)\s+ORDER BY[^L]+LIMIT\s+(\d+)\s+OFFSET\s+(\d+)/i', $sql, $m ) ) {
 			$table   = $m[1];
 			$user_id = (int) $m[2];
@@ -203,15 +257,15 @@ final class FakeWpdb {
 	 *
 	 * @return array<string,mixed>|null
 	 */
-	public function get_row( string $sql, string $output = 'ARRAY_A' ): ?array {
+	public function get_row( string $sql, string $output = 'OBJECT' ): array|object|null {
 		if ( ! preg_match( '/FROM\s+(\S+)\s+WHERE\s+(.+?)(?:\s+LIMIT|\s*$)/is', $sql, $m ) ) {
 			return null;
 		}
 		$table  = $m[1];
 		$where  = array();
-		if ( preg_match_all( "/(\w+)\s*=\s*'([^']*)'/", $m[2], $pairs, PREG_SET_ORDER ) ) {
+		if ( preg_match_all( "/(\w+)\s*=\s*(?:'([^']*)'|(\d+))/", $m[2], $pairs, PREG_SET_ORDER ) ) {
 			foreach ( $pairs as $p ) {
-				$where[ $p[1] ] = $p[2];
+				$where[ $p[1] ] = isset( $p[3] ) && '' !== $p[3] ? $p[3] : $p[2];
 			}
 		}
 		foreach ( $this->tables[ $table ] ?? array() as $row ) {
@@ -223,10 +277,67 @@ final class FakeWpdb {
 				}
 			}
 			if ( $match ) {
-				return $row;
+				return 'OBJECT' === $output ? $this->as_ledger_object( $row ) : $row;
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * A stored row as $wpdb returns it by default: an object whose values
+	 * are strings, with the 1.9.0 ledger columns defaulted.
+	 *
+	 * @param array<string,mixed> $row Row.
+	 * @return object
+	 */
+	public function as_ledger_object( array $row ): object {
+		$row += array( 'reason' => '', 'reference' => '', 'hold_id' => 0 );
+		return (object) array_map( static fn ( $v ) => is_scalar( $v ) ? (string) $v : $v, $row );
+	}
+
+	/**
+	 * Rows of a table matching "AND col = x / col IN (...) / col >= 'x' /
+	 * col < 'x'" conditions, the shape Ledger::query() builds.
+	 *
+	 * @param string $table Table.
+	 * @param string $conds Everything after "WHERE 1=1".
+	 * @return array<int, array<string,mixed>>
+	 */
+	private function filter_where( string $table, string $conds ): array {
+		$rows = array_values( $this->tables[ $table ] ?? array() );
+		$rows = array_map( static fn ( $r ) => $r + array( 'reason' => '', 'reference' => '', 'hold_id' => 0 ), $rows );
+		preg_match_all( "/AND\s+(\w+)\s*(=|>=|<=|<|>|IN)\s*(\([^)]*\)|'[^']*'|-?\d+)/i", $conds, $all, PREG_SET_ORDER );
+		foreach ( $all as $c ) {
+			list( , $col, $op, $raw ) = $c;
+			$op = strtoupper( $op );
+			if ( 'IN' === $op ) {
+				preg_match_all( "/'([^']*)'|(-?\d+)/", $raw, $vm, PREG_SET_ORDER );
+				$vals = array_map( static fn ( $v ) => isset( $v[2] ) && '' !== $v[2] ? $v[2] : $v[1], $vm );
+				$rows = array_filter( $rows, static fn ( $r ) => in_array( (string) $r[ $col ], $vals, true ) );
+				continue;
+			}
+			$val  = trim( $raw, "'" );
+			$rows = array_filter(
+				$rows,
+				static function ( $r ) use ( $col, $op, $val ) {
+					$have = (string) ( $r[ $col ] ?? '' );
+					$cmp  = is_numeric( $have ) && is_numeric( $val ) ? ( (float) $have <=> (float) $val ) : strcmp( $have, $val );
+					switch ( $op ) {
+						case '=':
+							return 0 === $cmp;
+						case '>=':
+							return $cmp >= 0;
+						case '<=':
+							return $cmp <= 0;
+						case '<':
+							return $cmp < 0;
+						default:
+							return $cmp > 0;
+					}
+				}
+			);
+		}
+		return array_values( $rows );
 	}
 
 	/**
@@ -240,7 +351,21 @@ final class FakeWpdb {
 	public function query( string $sql ): int|false {
 		$this->rows_affected = 0;
 
-		if ( preg_match( '/^\s*(START TRANSACTION|COMMIT|ROLLBACK)/i', $sql ) ) {
+		$this->queries[] = $sql;
+
+		if ( preg_match( '/^\s*START TRANSACTION/i', $sql ) ) {
+			$this->snapshot = $this->tables;
+			return 0;
+		}
+		if ( preg_match( '/^\s*COMMIT/i', $sql ) ) {
+			$this->snapshot = null;
+			return 0;
+		}
+		if ( preg_match( '/^\s*ROLLBACK/i', $sql ) ) {
+			if ( null !== $this->snapshot ) {
+				$this->tables   = $this->snapshot;
+				$this->snapshot = null;
+			}
 			return 0;
 		}
 
@@ -265,7 +390,7 @@ final class FakeWpdb {
 			if ( ! isset( $this->tables[ $table ] ) ) {
 				$this->tables[ $table ] = array();
 			}
-			$data['id']               = count( $this->tables[ $table ] ) + 1;
+			$data['id']               = $this->next_id( $table );
 			$data['created_at']       = gmdate( 'Y-m-d H:i:s.u' );
 			$this->tables[ $table ][] = $data;
 			$this->insert_id          = (int) $data['id'];
@@ -361,7 +486,7 @@ final class FakeWpdb {
 				$data[ $col ] = $default;
 			}
 		}
-		$data['id']               = count( $this->tables[ $table ] ) + 1;
+		$data['id']               = $this->next_id( $table );
 		$data['created_at']       = $data['created_at'] ?? gmdate( 'Y-m-d H:i:s.u' );
 		$this->tables[ $table ][] = $data;
 		$this->insert_id          = (int) $data['id'];
@@ -438,7 +563,31 @@ final class FakeWpdb {
 		}
 	}
 
+	/**
+	 * Next AUTO_INCREMENT id: never reuses an id after a delete, like MySQL.
+	 *
+	 * @param string $table Table.
+	 * @return int
+	 */
+	private function next_id( string $table ): int {
+		$max = 0;
+		foreach ( $this->tables[ $table ] ?? array() as $row ) {
+			$max = max( $max, (int) ( $row['id'] ?? 0 ) );
+		}
+		$this->auto_increment[ $table ] = max( $this->auto_increment[ $table ] ?? 0, $max ) + 1;
+		return $this->auto_increment[ $table ];
+	}
+
+	/** Highest id handed out per table. @var array<string,int> */
+	private array $auto_increment = array();
+
 	public function reset(): void {
+		$this->snapshot         = null;
+		$this->auto_increment   = array();
+		$this->lock_result      = '1';
+		$this->locks            = 0;
+		$this->locks_taken      = array();
+		$this->queries          = array();
 		$this->tables           = array();
 		$this->create_table_sql = array();
 		$this->unique_keys      = array();

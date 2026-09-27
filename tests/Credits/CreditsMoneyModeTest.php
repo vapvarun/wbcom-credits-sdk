@@ -123,4 +123,36 @@ final class CreditsMoneyModeTest extends TestCase {
 		Credits::adjust_money( self::SLUG_USD, self::USER, -12.34 );
 		self::assertSame( 3766, Credits::get_balance( self::SLUG_USD, self::USER ) ); // 5000 - 1234.
 	}
+
+	public function test_low_balance_threshold_is_money_on_a_money_consumer(): void {
+		$fired = array();
+		add_action(
+			'wbcom_credits_low',
+			static function ( $slug, $user_id, $balance ) use ( &$fired ): void {
+				$fired[] = $balance;
+			},
+			10,
+			3
+		);
+
+		// Default threshold 5 means 5.00 (500 minor units), not 5 cents.
+		$slug = $this->money_slug_for_threshold();
+		Credits::topup_money( $slug, 9, 10.0, '', 'seed' );
+		Credits::hold_money( $slug, 9, 4.0, 1 ); // 6.00 left: above 5.00.
+		Credits::hold_money( $slug, 9, 2.0, 2 ); // 4.00 left: below.
+
+		$this->assertSame( array( 400 ), $fired );
+	}
+
+	private function money_slug_for_threshold(): string {
+		\Wbcom\Credits\Registry::instance()->register(
+			array(
+				'slug'    => 'money-threshold',
+				'prefix'  => 'mthr',
+				'version' => '1.0.0',
+				'money'   => array( 'currency' => 'USD' ),
+			)
+		);
+		return 'money-threshold';
+	}
 }

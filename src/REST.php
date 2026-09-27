@@ -126,10 +126,18 @@ final class REST {
 						'required'          => true,
 						'sanitize_callback' => 'absint',
 					),
+					// Signed: a negative amount removes credits. absint used to turn
+					// -3 into +3, so a correction added what it meant to take away.
 					'amount'  => array(
+						'description'       => 'Signed amount in ledger units: credits, or minor units (cents) for a money consumer.',
 						'type'              => 'integer',
-						'required'          => true,
-						'sanitize_callback' => 'absint',
+						'required'          => false,
+						'sanitize_callback' => static fn ( $value ): int => (int) $value,
+					),
+					'amount_money' => array(
+						'description'       => 'Money consumers only: the signed amount in major units (12.50). Use instead of amount.',
+						'type'              => 'number',
+						'required'          => false,
 					),
 					'note'    => array(
 						'type'              => 'string',
@@ -198,6 +206,18 @@ final class REST {
 		$user_id = (int) $request->get_param( 'user_id' );
 		$amount  = (int) $request->get_param( 'amount' );
 		$note    = (string) $request->get_param( 'note' );
+		$money   = $request->get_param( 'amount_money' );
+
+		// A money consumer's ledger holds minor units; `amount_money` takes
+		// what an admin types (12.50, or -3 to take some back) and converts
+		// it at the one boundary.
+		if ( null !== $money && '' !== $money ) {
+			if ( ! Credits::is_money( $this->slug ) ) {
+				return new \WP_Error( 'wbcom_credits_not_money', __( 'amount_money is only for money consumers; send amount.', 'wbcom-credits-sdk' ), array( 'status' => 400 ) );
+			}
+			$sign   = (float) $money < 0 ? -1 : 1;
+			$amount = $sign * Money::to_minor( abs( (float) $money ), Credits::resolve_money_currency( $this->slug ) );
+		}
 
 		if ( 0 === $user_id || ! get_userdata( $user_id ) ) {
 			return new \WP_Error( 'wbcom_credits_invalid_user', __( 'Invalid user ID.', 'wbcom-credits-sdk' ), array( 'status' => 400 ) );
@@ -218,6 +238,7 @@ final class REST {
 				'user_id'     => $user_id,
 				'adjusted'    => $amount,
 				'new_balance' => Credits::get_balance( $this->slug, $user_id ),
+				'unit'        => Credits::is_money( $this->slug ) ? 'minor' : 'credits',
 			)
 		);
 	}

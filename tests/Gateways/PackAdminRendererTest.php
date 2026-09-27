@@ -86,7 +86,7 @@ final class PackAdminRendererTest extends TestCase {
 		$this->assertStringContainsString( 'data-option="demo_pricing"', $html );
 		$this->assertStringContainsString( 'demo_pricing[currency]', $html );
 		$this->assertStringContainsString( 'demo_pricing[custom_enabled]', $html );
-		$this->assertStringContainsString( 'demo_pricing[rate_cents]', $html );
+		$this->assertStringContainsString( 'demo_pricing[rate]', $html );
 		$this->assertStringContainsString( 'demo_pricing[min_credits]', $html );
 		$this->assertStringContainsString( 'demo_pricing[max_credits]', $html );
 	}

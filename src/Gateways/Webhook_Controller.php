@@ -76,6 +76,10 @@ final class Webhook_Controller {
 					// posts is dropped by the resolver. See Pricing::resolve()
 					// and docs/MIGRATION-1.3.0-pricing.md.
 					'return_url' => array( 'type' => 'string', 'sanitize_callback' => 'esc_url_raw' ),
+					// 1.9.0: the buyer's billing (Billing::fields() keys), saved to
+					// their account and snapshotted on the order.
+					'billing'    => array( 'type' => 'object', 'default' => array() ),
+					'coupon'     => array( 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ),
 				),
 			)
 		);
@@ -174,17 +178,72 @@ final class Webhook_Controller {
 			$return_url = \Wbcom\Credits\Registry::instance()->return_url_for( $this->slug );
 		}
 
+		// Billing belongs to the account: what the buyer typed is saved to
+		// their billing_* meta, and the order keeps a snapshot of it.
+		$user_id = get_current_user_id();
+		$typed   = (array) $request->get_param( 'billing' );
+		if ( ! empty( $typed ) ) {
+			\Wbcom\Credits\Billing::save( $user_id, $typed, $this->slug );
+		}
+		$billing = \Wbcom\Credits\Billing::get( $user_id, $this->slug );
+		$missing = \Wbcom\Credits\Billing::missing( $billing, $this->slug );
+		if ( ! empty( $missing ) ) {
+			return new \WP_Error(
+				'billing_incomplete',
+				__( 'Please complete your billing details.', 'wbcom-credits-sdk' ),
+				array(
+					'status' => 400,
+					'fields' => $missing,
+				)
+			);
+		}
+
+		$order = Order::build( $this->slug, $resolved, (string) $request->get_param( 'coupon' ), $billing );
+		if ( is_wp_error( $order ) ) {
+			return $order;
+		}
+
+		// A coupon that covers the whole price: nothing to collect, so no
+		// gateway. Credited and recorded like any paid order.
+		if ( $order['total'] <= 0 ) {
+			$session  = 'free_' . wp_generate_password( 20, false );
+			$credited = Fulfilment::credit( $this->slug, $user_id, $order['credits'], $order, 'free', $session, '', '', 0, $order['currency'] );
+			if ( null === $credited ) {
+				return new \WP_Error( 'topup_failed', __( 'Could not add the credits. Please try again.', 'wbcom-credits-sdk' ), array( 'status' => 500 ) );
+			}
+			return new \WP_REST_Response(
+				array(
+					'url'     => add_query_arg( 'wbcom_credits', 'success', '' !== $return_url ? $return_url : home_url( '/' ) ),
+					'free'    => true,
+					'credits' => $order['credits'],
+				),
+				200
+			);
+		}
+
+		Pending_Checkouts::stage_order( $order );
 		try {
 			$url = $gateway->create_checkout(
 				$this->slug,
-				get_current_user_id(),
-				$resolved['credits'],
-				$resolved['price_cents'],
-				$resolved['currency'],
+				$user_id,
+				$order['credits'],
+				$order['total'],
+				$order['currency'],
 				'' !== $return_url ? $return_url : null
 			);
 		} catch ( \RuntimeException $e ) {
-			return new \WP_Error( 'gateway_error', $e->getMessage(), array( 'status' => 502 ) );
+			// The provider's own words are for the site owner (debug log), not
+			// the buyer, who needs to know what to do next.
+			if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+				error_log( sprintf( '[wbcom-credits] %s checkout failed for %s: %s', $gateway->get_id(), $this->slug, $e->getMessage() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			}
+			return new \WP_Error(
+				'gateway_error',
+				__( 'The payment could not be started. Please try again, or contact the site owner if it keeps happening.', 'wbcom-credits-sdk' ),
+				array( 'status' => 502 )
+			);
+		} finally {
+			Pending_Checkouts::stage_order( null );
 		}
 
 		return new \WP_REST_Response( array( 'url' => $url ), 200 );

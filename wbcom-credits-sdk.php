@@ -10,7 +10,7 @@
  * `wbcom_credits_sdk_registry` hook.
  *
  * @package Wbcom\Credits
- * @version 1.8.1
+ * @version 1.9.0
  * @license GPL-2.0+
  */
 
@@ -62,7 +62,7 @@ defined( 'ABSPATH' ) || exit;
 if ( ! isset( $GLOBALS['wbcom_credits_sdk_copies'] ) ) {
 	$GLOBALS['wbcom_credits_sdk_copies'] = array();
 }
-$GLOBALS['wbcom_credits_sdk_copies'][ __DIR__ ] = '1.8.1';
+$GLOBALS['wbcom_credits_sdk_copies'][ __DIR__ ] = '1.9.0';
 
 if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
 
@@ -108,6 +108,17 @@ if ( ! function_exists( 'wbcom_credits_sdk_class_map' ) ) {
 			'Wbcom\\Credits\\Gateways\\Admin_Form_Renderer'     => '/src/Gateways/Admin_Form_Renderer.php',
 			'Wbcom\\Credits\\Gateways\\Pricing'                 => '/src/Gateways/Pricing.php',
 			'Wbcom\\Credits\\Gateways\\Pack_Admin_Renderer'     => '/src/Gateways/Pack_Admin_Renderer.php',
+			'Wbcom\\Credits\\Gateways\\PricingException'        => '/src/Gateways/Pricing.php',
+			'Wbcom\\Credits\\Gateways\\Checkout_Settings'       => '/src/Gateways/Checkout_Settings.php',
+			'Wbcom\\Credits\\Gateways\\Coupons'                 => '/src/Gateways/Coupons.php',
+			'Wbcom\\Credits\\Gateways\\Order'                   => '/src/Gateways/Order.php',
+			'Wbcom\\Credits\\Gateways\\Fulfilment'              => '/src/Gateways/Fulfilment.php',
+			'Wbcom\\Credits\\Gateways\\Reconciler'              => '/src/Gateways/Reconciler.php',
+			'Wbcom\\Credits\\Support\\Currencies'               => '/src/Support/Currencies.php',
+			'Wbcom\\Credits\\Support\\Countries'                => '/src/Support/Countries.php',
+			'Wbcom\\Credits\\Billing'                           => '/src/Billing.php',
+			'Wbcom\\Credits\\Receipt'                           => '/src/Receipt.php',
+			'Wbcom\\Credits\\Expiry'                            => '/src/Expiry.php',
 		);
 	}
 
@@ -207,10 +218,10 @@ if ( ! defined( 'WBCOM_CREDITS_SDK_AUTOLOADER_LOADED' ) ) {
  * The function-name guard makes this file idempotent — re-including it
  * after the first run is a clean no-op.
  */
-if ( ! function_exists( 'wbcom_credits_sdk_register_1_8_1' ) && function_exists( 'add_action' ) ) {
+if ( ! function_exists( 'wbcom_credits_sdk_register_1_9_0' ) && function_exists( 'add_action' ) ) {
 
 	add_action( 'after_setup_theme', array( '\\Wbcom\\Credits\\Versions', 'initialize_latest_version' ), 1, 0 );
-	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_8_1', 0, 0 );
+	add_action( 'after_setup_theme', 'wbcom_credits_sdk_register_1_9_0', 0, 0 );
 
 	/**
 	 * Register this version with Versions::instance().
@@ -218,8 +229,8 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_8_1' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_register_1_8_1(): void {
-		\Wbcom\Credits\Versions::instance()->register( '1.8.1', 'wbcom_credits_sdk_initialize_1_8_1' );
+	function wbcom_credits_sdk_register_1_9_0(): void {
+		\Wbcom\Credits\Versions::instance()->register( '1.9.0', 'wbcom_credits_sdk_initialize_1_9_0' );
 	}
 
 	/**
@@ -228,9 +239,9 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_8_1' ) && function_exists(
 	 * @since 1.3.0
 	 * @return void
 	 */
-	function wbcom_credits_sdk_initialize_1_8_1(): void {
+	function wbcom_credits_sdk_initialize_1_9_0(): void {
 		if ( ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-			define( 'WBCOM_CREDITS_SDK_VERSION', '1.8.1' );
+			define( 'WBCOM_CREDITS_SDK_VERSION', '1.9.0' );
 		}
 		if ( ! defined( 'WBCOM_CREDITS_SDK_PATH' ) ) {
 			define( 'WBCOM_CREDITS_SDK_PATH', __DIR__ );
@@ -247,7 +258,7 @@ if ( ! function_exists( 'wbcom_credits_sdk_register_1_8_1' ) && function_exists(
 	// got here, run registration + initialization synchronously so the SDK
 	// is usable on this same request.
 	if ( did_action( 'after_setup_theme' ) && ! doing_action( 'after_setup_theme' ) && ! defined( 'WBCOM_CREDITS_SDK_VERSION' ) ) {
-		wbcom_credits_sdk_register_1_8_1();
+		wbcom_credits_sdk_register_1_9_0();
 		\Wbcom\Credits\Versions::initialize_latest_version();
 	}
 }

@@ -25,7 +25,9 @@ $tmp = sys_get_temp_dir() . '/wbcom-sdk-election-' . getmypid();
 function wbcom_fake_copy( string $dir, string $version ): void {
 	@mkdir( $dir . '/src', 0777, true );
 	$real = file_get_contents( __DIR__ . '/../wbcom-credits-sdk.php' );
-	$real = str_replace( "__DIR__ ] = '1.7.1';", "__DIR__ ] = '" . $version . "';", $real );
+	// Whatever version the real file announces: a literal here broke the
+	// check silently at the first version bump after it was written.
+	$real = preg_replace( "/__DIR__ \] = '[0-9.]+';/", "__DIR__ ] = '" . $version . "';", $real, 1 );
 	file_put_contents( $dir . '/wbcom-credits-sdk.php', $real );
 	file_put_contents(
 		$dir . '/src/Money.php',

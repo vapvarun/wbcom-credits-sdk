@@ -23,14 +23,15 @@ into 1.8.0, the first tag since 1.7.0.
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.8.0 → 1.8.1* | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.8.1 → 1.9.0* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
-| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.7.0 | none — legacy API only |
+| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.0 development build (branch `1.8.0`); re-bundle the tag | `JobCharge::consumer()` gates on `Registry::consumer()` |
 | WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | `plugins_loaded` (10) | 1.7.0 | none — legacy API only |
 
-\* Target once WB Ad Manager Pro re-bundles from this release; not yet
-re-vendored as of this SDK audit.
+\* WB Ad Manager Pro bundles 1.9.0 before its 3.2.0 release (owner decision
+2026-09-27). Adoption for every consumer is tracked on the Basecamp project
+"Wbcom Credits SDK" (one "Adopt SDK 1.9.0" card each).
 
 Not consumers, checked and clear: WB Ads Rotator with Split Test (free),
 WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.

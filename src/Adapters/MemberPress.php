@@ -152,10 +152,6 @@ final class MemberPressAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Atomic dedupe: claim BEFORE crediting.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'mepr:txn:' . $txn_id ) ) {
-			return;
-		}
 
 		$registry = $this->get_registry();
 		$credits  = $registry->lookup_credits( $this->get_id(), $product_id );
@@ -167,7 +163,7 @@ final class MemberPressAdapter implements AdapterInterface {
 				$txn_id
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
+			\Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'mepr:txn:' . $txn_id, $user_id, $credits, $note );
 		}
 	}
 

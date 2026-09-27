@@ -86,7 +86,7 @@ final class PayPal extends Abstract_Gateway {
 			throw new \RuntimeException( 'PayPal is not configured.' );
 		}
 
-		$amount_str = number_format( $price_cents / 100, 2, '.', '' );
+		$amount_str = self::major( $price_cents, $currency );
 
 		// Per-checkout return_url override — see Stripe.php for the same
 		// logic, including why the gateway params are appended to whichever
@@ -310,7 +310,7 @@ final class PayPal extends Abstract_Gateway {
 				type: Gateway_Event::TYPE_CHECKOUT_COMPLETED,
 				event_id: $event_id,
 				session_id: $order_id,
-				amount_cents: (int) round( ( (float) $amount_str ) * 100 ),
+				amount_cents: \Wbcom\Credits\Money::to_minor( $amount_str, (string) ( $resource['amount']['currency_code'] ?? 'USD' ) ),
 				currency: strtoupper( (string) ( $resource['amount']['currency_code'] ?? '' ) ),
 				raw: $payload,
 				// Record the CAPTURE id (resource.id on the capture event) so a
@@ -366,7 +366,7 @@ final class PayPal extends Abstract_Gateway {
 				return null;
 			}
 			$amount_str    = (string) ( $resource['amount']['value'] ?? '0' );
-			$refund_amount = (int) round( ( (float) $amount_str ) * 100 );
+			$refund_amount = \Wbcom\Credits\Money::to_minor( $amount_str, (string) ( $resource['amount']['currency_code'] ?? 'USD' ) );
 			// Mirror Stripe: a zero/negative refund amount is a non-event. The
 			// Abstract_Gateway refund path additionally clamps to the captured
 			// total, so we only have to guard the trivially-empty case here.
@@ -503,7 +503,7 @@ final class PayPal extends Abstract_Gateway {
 			type: Gateway_Event::TYPE_CHECKOUT_COMPLETED,
 			event_id: $event_id,
 			session_id: $order_id,
-			amount_cents: (int) round( ( (float) ( $capture['amount']['value'] ?? '0' ) ) * 100 ),
+			amount_cents: \Wbcom\Credits\Money::to_minor( (string) ( $capture['amount']['value'] ?? '0' ), (string) ( $capture['amount']['currency_code'] ?? 'USD' ) ),
 			currency: strtoupper( (string) ( $capture['amount']['currency_code'] ?? '' ) ),
 			raw: $order,
 			provider_ref: (string) ( $capture['id'] ?? '' )
@@ -575,7 +575,7 @@ final class PayPal extends Abstract_Gateway {
 			$body['amount'] = array(
 				// Currency must match capture; PayPal will reject mismatches.
 				'currency_code' => strtoupper( (string) ( $unit['amount']['currency_code'] ?? 'USD' ) ),
-				'value'         => number_format( $amount_cents / 100, 2, '.', '' ),
+				'value'         => self::major( $amount_cents, (string) ( $unit['amount']['currency_code'] ?? 'USD' ) ),
 			);
 		}
 
@@ -642,5 +642,18 @@ final class PayPal extends Abstract_Gateway {
 		$token = (string) $decoded['access_token'];
 		set_transient( $cache_key, $token, 9 * MINUTE_IN_SECONDS );
 		return $token;
+	}
+
+	/**
+	 * Minor units as PayPal's decimal string, in the currency's own decimals
+	 * (JPY has none, KWD three; a fixed / 100 charged 100x or a tenth).
+	 *
+	 * @since 1.9.0
+	 * @param int    $minor    Minor units.
+	 * @param string $currency ISO 4217 code.
+	 * @return string
+	 */
+	private static function major( int $minor, string $currency ): string {
+		return number_format( \Wbcom\Credits\Money::to_major( $minor, $currency ), \Wbcom\Credits\Money::decimals_for( $currency ), '.', '' );
 	}
 }

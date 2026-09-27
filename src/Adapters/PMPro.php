@@ -144,10 +144,6 @@ final class PMProAdapter implements AdapterInterface {
 
 		$today = wp_date( 'Y-m-d' );
 
-		// Atomic dedupe: claim BEFORE crediting, once per user+level+day.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:level:' . $user_id . ':' . $level_id . ':' . $today ) ) {
-			return;
-		}
 
 		$registry = $this->get_registry();
 		$credits  = $registry->lookup_credits( $this->get_id(), $level_id );
@@ -160,11 +156,11 @@ final class PMProAdapter implements AdapterInterface {
 				$level_obj ? $level_obj->name : (string) $level_id
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
+			\Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:level:' . $user_id . ':' . $level_id . ':' . $today, $user_id, $credits, $note );
 
 			// Keep the legacy meta flag as a human-readable marker for
 			// support / reconciliation. It is NO LONGER the dedupe guard —
-			// the atomic claim above is — so a save() failure here cannot
+			// the claim inside topup_once() is — so a save() failure here cannot
 			// cause a double top-up.
 			update_user_meta( $user_id, '_wbcom_credits_pmpro_level_' . $level_id, $today );
 		}
@@ -198,10 +194,6 @@ final class PMProAdapter implements AdapterInterface {
 
 		$order_id = $order->id ?? 0;
 
-		// Atomic dedupe: claim BEFORE crediting.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:order:' . $order_id ) ) {
-			return;
-		}
 
 		$registry = $this->get_registry();
 		$credits  = $registry->lookup_credits( $this->get_id(), $level_id );
@@ -213,7 +205,7 @@ final class PMProAdapter implements AdapterInterface {
 				$order_id
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
+			\Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'pmpro:order:' . $order_id, $user_id, $credits, $note );
 
 			// Keep the legacy meta flag as a human-readable marker for
 			// support / reconciliation. It is NO LONGER the dedupe guard.

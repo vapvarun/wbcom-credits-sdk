@@ -23,9 +23,11 @@ own code, and the fixes drifted apart. See [AUDIT-2026-09-27.md](AUDIT-2026-09-2
 - Write through `Credits::*` (or `*_money()` in money mode). Never call
   `Ledger::insert()` or write to `{prefix}_credit_ledger` yourself: direct
   writes skip the hooks, the cache and the units rule.
-- Read through `Credits::*`. If you need a query the API does not offer
-  (a report or a date range), add it to the SDK first. The same goes for a
-  lock or a reason code.
+- Read through `Credits::*`: `query_ledger()`, `count_ledger_rows()` and
+  `sum_ledger()` filter by user, reason, reference and UTC date range.
+  If you need a query they do not offer, add it to the SDK first.
+- Pass a `reason` and `reference` when you top up or adjust
+  (`purchase` + order id, `admin_adjust`, `gateway_refund`).
 - Existing direct reads and writes are debt. List them in the consumer's
   `docs/standards/credits-sdk.md` and remove them as the SDK gains the API.
 
@@ -38,13 +40,14 @@ own code, and the fixes drifted apart. See [AUDIT-2026-09-27.md](AUDIT-2026-09-2
 - Every function that takes or returns an amount says its unit in the
   docblock: `ledger units`, `minor units` or `major units`.
 
-## 4. Spend safely
-- Charge through hold → settle, or release. Keep the hold id that `hold()`
-  returns and cancel by id (`cancel_hold_by_id()`). Never use
-  `cancel_hold( $item_id )`.
-- Check affordability under a lock and read the balance uncached
-  (`Credits::invalidate_cache()` after taking the lock), until the SDK ships
-  `try_hold()`. Then use `try_hold()`.
+## 4. Spend safely (1.9.0+)
+- Charge with an approval step: `try_hold()`, keep the id, then
+  `settle_hold( $id )` or `release_hold( $id )`.
+- Charge per event, with no approval step: `spend()`.
+- Both check the balance under the user's lock. Never check with
+  `get_balance()` and then write: two requests both pass.
+- Cancel by id (`cancel_hold_by_id()`). `deduct()` and `cancel_hold( $item_id )`
+  remain for old callers only.
 
 ## 5. Time
 - Every row is stored in UTC, written by PHP with `gmdate( 'Y-m-d H:i:s' )`.
@@ -72,6 +75,6 @@ own code, and the fixes drifted apart. See [AUDIT-2026-09-27.md](AUDIT-2026-09-2
 - [ ] No edit under `libs/wbcom-credits-sdk/` except a full re-bundle.
 - [ ] No new `Ledger::insert` / `Ledger::table_name` / raw ledger SQL.
 - [ ] Every amount's unit is named, and money goes through `Money`.
-- [ ] Spends use hold → settle by hold id, under a lock.
+- [ ] Spends use `try_hold()` → `settle_hold()` / `release_hold()`, or `spend()`.
 - [ ] Dates are written as UTC from PHP, and shown in the site time zone.
 - [ ] Buy UI gated on `can_purchase()`, SDK calls guarded by the `…_ready()` helper.

@@ -558,3 +558,49 @@ require_once __DIR__ . '/../src/Adapters/WooSubscriptions.php';
 require_once __DIR__ . '/../src/Adapters/WooMemberships.php';
 require_once __DIR__ . '/../src/Adapters/PMPro.php';
 require_once __DIR__ . '/../src/Adapters/MemberPress.php';
+
+// In-memory user meta (low-balance "already alerted" flag).
+global $wbcom_credits_test_usermeta;
+$wbcom_credits_test_usermeta = array();
+
+if ( ! function_exists( 'get_user_meta' ) ) {
+	function get_user_meta( int $user_id, string $key = '', bool $single = false ) {
+		global $wbcom_credits_test_usermeta;
+		return $wbcom_credits_test_usermeta[ $user_id ][ $key ] ?? '';
+	}
+}
+
+if ( ! function_exists( 'update_user_meta' ) ) {
+	function update_user_meta( int $user_id, string $key, $value ) {
+		global $wbcom_credits_test_usermeta;
+		$wbcom_credits_test_usermeta[ $user_id ][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_user_meta' ) ) {
+	function delete_user_meta( int $user_id, string $key ): bool {
+		global $wbcom_credits_test_usermeta;
+		unset( $wbcom_credits_test_usermeta[ $user_id ][ $key ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'sanitize_email' ) ) {
+	function sanitize_email( string $s ): string {
+		return trim( $s );
+	}
+}
+if ( ! function_exists( 'sanitize_textarea_field' ) ) {
+	function sanitize_textarea_field( string $s ): string {
+		return trim( $s );
+	}
+}
+if ( ! function_exists( '_n' ) ) {
+	function _n( string $single, string $plural, int $n, ?string $domain = null ): string {
+		return 1 === $n ? $single : $plural;
+	}
+}
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}

@@ -39,11 +39,13 @@ defined( 'ABSPATH' ) || exit;
 final class Pending_Checkouts {
 
 	/**
-	 * Default TTL in seconds (24 hours).
+	 * Default TTL in seconds (7 days: delayed payment methods - SEPA, ACH,
+	 * bank transfers - confirm days after the buyer leaves, and a webhook
+	 * arriving after the entry is gone was answered unknown_session).
 	 *
 	 * @var int
 	 */
-	private const DEFAULT_TTL = 86400;
+	private const DEFAULT_TTL = 7 * 86400;
 
 	/**
 	 * How many stored entries one put() may inspect while sweeping expired ones.
@@ -84,6 +86,28 @@ final class Pending_Checkouts {
 	}
 
 	/**
+	 * Order parts (Order::build()) waiting for the next put().
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private static ?array $staged_order = null;
+
+	/**
+	 * Stage the order the next put() stores with its session.
+	 *
+	 * Gateways call put() from inside create_checkout(), after the provider
+	 * returns the session id; staging keeps the order off the gateway
+	 * interface, so custom gateways written before 1.9.0 keep working.
+	 *
+	 * @since 1.9.0
+	 * @param array<string, mixed>|null $order Order parts, or null to clear.
+	 * @return void
+	 */
+	public static function stage_order( ?array $order ): void {
+		self::$staged_order = $order;
+	}
+
+	/**
 	 * Store the expected payment for a session.
 	 *
 	 * @param string               $slug        Plugin slug.
@@ -113,10 +137,12 @@ final class Pending_Checkouts {
 				'credits'     => (int) ( $payload['credits'] ?? 0 ),
 				'price_cents' => (int) ( $payload['price_cents'] ?? 0 ),
 				'currency'    => strtoupper( sanitize_text_field( (string) ( $payload['currency'] ?? 'USD' ) ) ),
+				'order'       => (array) ( self::$staged_order ?? array() ),
 				'expires_at'  => $expires_at,
 			),
 			false
 		);
+		self::$staged_order = null;
 
 		self::sweep_expired( $slug, $key, $expires_at );
 	}
@@ -152,6 +178,34 @@ final class Pending_Checkouts {
 		// Strip storage-only fields before returning.
 		unset( $entry['expires_at'] );
 		return $entry;
+	}
+
+	/**
+	 * The oldest live pending checkouts for a slug, for the reconcile sweep.
+	 *
+	 * @since 1.9.0
+	 * @param string $slug  Plugin slug.
+	 * @param int    $limit Most to return.
+	 * @return array<int, array{session_id: string, gateway: string}>
+	 */
+	public static function oldest( string $slug, int $limit ): array {
+		$now   = time();
+		$out   = array();
+		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
+		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
+			if ( count( $out ) >= $limit ) {
+				break;
+			}
+			$entry = get_option( (string) $key, null );
+			if ( ! is_array( $entry ) || (int) ( $entry['expires_at'] ?? 0 ) < $now || '' === (string) ( $entry['session_id'] ?? '' ) ) {
+				continue;
+			}
+			$out[] = array(
+				'session_id' => (string) $entry['session_id'],
+				'gateway'    => (string) ( $entry['gateway'] ?? '' ),
+			);
+		}
+		return $out;
 	}
 
 	/**

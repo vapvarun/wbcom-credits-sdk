@@ -34,6 +34,13 @@ final class Registry {
 	private array $plugins = array();
 
 	/**
+	 * Consumer instances keyed by slug, then consumer id.
+	 *
+	 * @var array<string, array<string, Consumer>>
+	 */
+	private array $consumers = array();
+
+	/**
 	 * Register a consuming plugin.
 	 *
 	 * @since 1.0.0
@@ -123,6 +130,32 @@ final class Registry {
 	}
 
 	/**
+	 * The Consumer object for one of a plugin's registered consumers.
+	 *
+	 * For plugins that drive an item's charge themselves (reserve before
+	 * publishing, settle, release, reprice) instead of, or as well as,
+	 * through the hold_on / deduct_on / refund_on hooks.
+	 *
+	 * @since 1.9.0
+	 *
+	 * @param string $slug        Plugin slug.
+	 * @param string $consumer_id Consumer id, e.g. 'job_post'.
+	 * @return Consumer|null Null when the slug or consumer isn't registered.
+	 */
+	public function consumer( string $slug, string $consumer_id ): ?Consumer {
+		if ( isset( $this->consumers[ $slug ][ $consumer_id ] ) ) {
+			return $this->consumers[ $slug ][ $consumer_id ];
+		}
+		foreach ( (array) ( $this->plugins[ $slug ]['consumers'] ?? array() ) as $config ) {
+			if ( (string) ( $config['id'] ?? '' ) === $consumer_id ) {
+				$this->consumers[ $slug ][ $consumer_id ] = new Consumer( $slug, (string) $this->plugins[ $slug ]['prefix'], $config );
+				return $this->consumers[ $slug ][ $consumer_id ];
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Get all registered plugin slugs.
 	 *
 	 * @since 1.0.0
@@ -149,6 +182,8 @@ final class Registry {
 	 * @return void
 	 */
 	public function boot_all(): void {
+		self::boot_shared();
+
 		foreach ( $this->plugins as $slug => $config ) {
 			// Ensure the per-consumer schema is current (creates/upgrades
 			// the ledger, gateway log, and processed-events tables). Guarded
@@ -158,8 +193,10 @@ final class Registry {
 
 			// Wire consumer hooks (hold/deduct/refund lifecycle).
 			foreach ( $config['consumers'] as $consumer_config ) {
-				$consumer = new Consumer( $slug, $config['prefix'], $consumer_config );
-				$consumer->register_hooks();
+				$consumer = $this->consumer( $slug, (string) ( $consumer_config['id'] ?? '' ) );
+				if ( $consumer ) {
+					$consumer->register_hooks();
+				}
 			}
 
 			// Initialize adapter registry for this plugin.
@@ -250,11 +287,17 @@ final class Registry {
 	 *       the v2 bug (version=2, no payment_intent column) get the column +
 	 *       idx_intent index added. The backfill is a no-op where they already
 	 *       exist (fresh installs), so bumping the version is safe for everyone.
+	 *  - 4, 5: 1.9.0 development builds (ledger expiry column and item
+	 *       indexes; gateway-log billing, discount and tax columns).
+	 *  - 6: 1.9.0 release. Ledger `reason`, `reference`, `hold_id` and their
+	 *       keys on top of 4 and 5. Ledger::maybe_create_table() now always
+	 *       runs Ledger::maybe_upgrade(), which adds each piece only when
+	 *       missing, so sites on a development build catch up too.
 	 *
 	 * @since 1.3.1
 	 * @var int
 	 */
-	private const SCHEMA_VERSION = 3;
+	private const SCHEMA_VERSION = 6;
 
 	/**
 	 * Create or upgrade the per-consumer schema, guarded by a stored
@@ -291,6 +334,39 @@ final class Registry {
 		Gateways\Processed_Events::maybe_create_table( $prefix );
 
 		update_option( $option_key, self::SCHEMA_VERSION, false );
+	}
+
+	/**
+	 * Wire what the SDK does once per request, whatever number of plugins
+	 * registered: the printable receipt page and the two hourly sweeps
+	 * (lapsed credit lots, unclaimed paid checkouts).
+	 *
+	 * Consumers must clear both cron hooks on deactivation (Expiry::CRON_HOOK,
+	 * Gateways\Reconciler::CRON_HOOK) when no other consumer is active.
+	 *
+	 * @since 1.9.0
+	 * @return void
+	 */
+	private static function boot_shared(): void {
+		static $booted = false;
+		if ( $booted ) {
+			return;
+		}
+		$booted = true;
+
+		add_action( 'template_redirect', array( Receipt::class, 'maybe_render' ) );
+		add_action( Expiry::CRON_HOOK, array( Expiry::class, 'run_all' ) );
+		add_action( Gateways\Reconciler::CRON_HOOK, array( Gateways\Reconciler::class, 'run_all' ) );
+		add_action(
+			'init',
+			static function (): void {
+				foreach ( array( Expiry::CRON_HOOK, Gateways\Reconciler::CRON_HOOK ) as $hook ) {
+					if ( ! wp_next_scheduled( $hook ) ) {
+						wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', $hook );
+					}
+				}
+			}
+		);
 	}
 
 	/**

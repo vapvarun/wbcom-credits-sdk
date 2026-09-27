@@ -53,45 +53,6 @@ defined( 'ABSPATH' ) || exit;
 final class Money {
 
 	/**
-	 * Currencies with no minor unit (ISO 4217 exponent 0).
-	 *
-	 * @var string[]
-	 */
-	private const ZERO_DECIMAL = array(
-		'BIF',
-		'CLP',
-		'DJF',
-		'GNF',
-		'JPY',
-		'KMF',
-		'KRW',
-		'MGA',
-		'PYG',
-		'RWF',
-		'UGX',
-		'VND',
-		'VUV',
-		'XAF',
-		'XOF',
-		'XPF',
-	);
-
-	/**
-	 * Currencies divided into thousandths (ISO 4217 exponent 3).
-	 *
-	 * @var string[]
-	 */
-	private const THREE_DECIMAL = array(
-		'BHD',
-		'IQD',
-		'JOD',
-		'KWD',
-		'LYD',
-		'OMR',
-		'TND',
-	);
-
-	/**
 	 * Decimal places for a currency.
 	 *
 	 * @since 1.5.0
@@ -99,27 +60,9 @@ final class Money {
 	 * @return int 0, 2 or 3.
 	 */
 	public static function decimals_for( string $currency ): int {
-		$code = strtoupper( trim( $currency ) );
-
-		if ( in_array( $code, self::ZERO_DECIMAL, true ) ) {
-			$decimals = 0;
-		} elseif ( in_array( $code, self::THREE_DECIMAL, true ) ) {
-			$decimals = 3;
-		} else {
-			$decimals = 2;
-		}
-
-		/**
-		 * Filter the decimal precision used for a currency.
-		 *
-		 * Lets a consumer support a currency the SDK does not know about, or
-		 * override precision for a non-standard denomination.
-		 *
-		 * @since 1.5.0
-		 * @param int    $decimals Decimal places.
-		 * @param string $code     Uppercased currency code.
-		 */
-		return (int) apply_filters( 'wbcom_credits_currency_decimals', $decimals, $code );
+		// One registry (complete ISO 4217) for every product. The private
+		// zero/three-decimal lists that used to live here were partial.
+		return Support\Currencies::decimals( strtoupper( trim( $currency ) ) );
 	}
 
 	/**

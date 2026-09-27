@@ -126,11 +126,6 @@ final class WooMembershipsAdapter implements AdapterInterface {
 			return;
 		}
 
-		// Atomic dedupe: claim BEFORE crediting. Keyed per membership so the
-		// award is once-ever (unchanged behaviour), but now race-safe.
-		if ( ! Processed_Events::claim( $this->slug, 'adapter:' . $this->get_id(), 'woomembership:membership:' . $membership_id ) ) {
-			return;
-		}
 
 		$registry = $this->get_registry();
 		$credits  = $registry->lookup_credits( $this->get_id(), $plan_id );
@@ -143,7 +138,7 @@ final class WooMembershipsAdapter implements AdapterInterface {
 				$plan_name
 			);
 
-			\Wbcom\Credits\Credits::topup( $this->slug, $user_id, $credits, $note );
+			\Wbcom\Credits\Credits::topup_once( $this->slug, 'adapter:' . $this->get_id(), 'woomembership:membership:' . $membership_id, $user_id, $credits, $note );
 		}
 
 		// Legacy marker for support / reconciliation only; no longer the guard.
