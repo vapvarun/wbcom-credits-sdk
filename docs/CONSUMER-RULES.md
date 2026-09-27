@@ -76,6 +76,7 @@ For the how-to (bundle, register, take money in, charge, refund, report), see
   - `diff -r` against that sha is empty;
   - the consumer's own test suite passes with the new bundle.
 - Update the consumer's row in CONSUMERS.md in the same PR that bumps the SDK.
+- Bundle only tagged releases, once per product release, and freeze the version before the product's QA round. See [RELEASE-POLICY.md](RELEASE-POLICY.md).
 
 ## Checklist for a PR that touches credits
 - [ ] No edit under `libs/wbcom-credits-sdk/` except a full re-bundle.
