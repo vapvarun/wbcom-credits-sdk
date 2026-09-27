@@ -232,7 +232,16 @@ final class Webhook_Controller {
 				'' !== $return_url ? $return_url : null
 			);
 		} catch ( \RuntimeException $e ) {
-			return new \WP_Error( 'gateway_error', $e->getMessage(), array( 'status' => 502 ) );
+			// The provider's own words are for the site owner (debug log), not
+			// the buyer, who needs to know what to do next.
+			if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+				error_log( sprintf( '[wbcom-credits] %s checkout failed for %s: %s', $gateway->get_id(), $this->slug, $e->getMessage() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			}
+			return new \WP_Error(
+				'gateway_error',
+				__( 'The payment could not be started. Please try again, or contact the site owner if it keeps happening.', 'wbcom-credits-sdk' ),
+				array( 'status' => 502 )
+			);
 		} finally {
 			Pending_Checkouts::stage_order( null );
 		}
