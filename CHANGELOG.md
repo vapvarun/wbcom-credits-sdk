@@ -36,6 +36,12 @@ Spends are serialised per user, and consumers can drive an item's charge directl
 - **Delayed Stripe payments** (`checkout.session.async_payment_succeeded`) were never credited.
 - **A paid checkout on a site without a webhook** was never credited: nothing called the claim route on return.
 - `tests/loader-election-check.php` rewrote a literal `'1.7.1'` that stopped existing at 1.8.0, so both fake copies announced the same version and the check failed.
+## [1.8.1] - September 2026
+
+### Fixed
+
+- **Every SDK row is stamped in UTC.** `Ledger::insert()`, `Transaction_Log::insert_checkout()` / `insert_refund()` and `Processed_Events` left `created_at` to the column's `DEFAULT CURRENT_TIMESTAMP`, which MySQL fills in the server's time zone. On a database set to anything but UTC (+05:30, say) every balance entry was hours off, while consumers write their own tables in UTC and show dates in the site zone. Each writer now passes `current_time( 'mysql', true )`. Rows written before this release keep their old stamps; a consumer that converts its tables to UTC should include `{prefix}_credit_ledger`, `{prefix}_credit_gateway_log` and `{prefix}_credit_processed_events` as server-clock columns. Found by WB Ad Manager QA.
+- The WooCommerce adapter's refund docblock matches the 1.8.0 policy (the balance never goes negative).
 
 ## [1.8.0] - September 2026
 

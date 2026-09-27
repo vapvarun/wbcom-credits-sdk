@@ -23,7 +23,7 @@ into 1.8.0, the first tag since 1.7.0.
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
-| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.7.0 → 1.8.0* | `Credits_Bridge::sdk_money_ready()` |
+| WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.8.0 → 1.8.1* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.0 (branch `1.8.0`) | `JobCharge::consumer()` gates on `Registry::consumer()` |
@@ -51,6 +51,13 @@ so a plugin that leaves it unhooked keeps selling while its credits feature
 is off. WB Listora Pro hooks it to its Monetization toggle.
 
 ## Rules
+
+These five cover bundling. How a consumer must USE the SDK (fix upstream,
+public API only, one unit rule, safe spends, UTC, gating) is in
+[docs/CONSUMER-RULES.md](docs/CONSUMER-RULES.md); every consumer follows it. The
+design gaps behind the repeated fixes are in
+[docs/AUDIT-2026-09-27.md](docs/AUDIT-2026-09-27.md).
+
 
 1. **One version across the portfolio.** A consumer that bundles an older copy
    is a hazard to every other consumer, so bumping one means bumping all. Check

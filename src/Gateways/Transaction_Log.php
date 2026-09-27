@@ -210,8 +210,9 @@ final class Transaction_Log {
 				'tax_cents'      => (int) ( $row['tax_cents'] ?? 0 ),
 				'coupon'         => strtoupper( (string) ( $row['coupon'] ?? '' ) ),
 				'billing'        => empty( $row['billing'] ) ? null : wp_json_encode( $row['billing'] ),
+				'created_at'     => gmdate( 'Y-m-d H:i:s' ), // UTC, see Ledger::insert().
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
 	}
@@ -265,8 +266,9 @@ final class Transaction_Log {
 				'currency'     => strtoupper( (string) ( $row['currency'] ?? 'USD' ) ),
 				'ledger_id'    => (int) ( $row['ledger_id'] ?? 0 ),
 				'parent_id'    => (int) ( $row['parent_id'] ?? 0 ),
+				'created_at'   => gmdate( 'Y-m-d H:i:s' ), // UTC, see Ledger::insert().
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d' )
+			array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%d', '%s' )
 		);
 		return $ok ? (int) $wpdb->insert_id : 0;
 	}

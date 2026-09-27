@@ -203,8 +203,11 @@ final class Ledger {
 			'entry_type' => $entry_type,
 			'amount'     => $amount,
 			'note'       => $note,
+			// UTC from PHP, never the column default: MySQL's
+			// CURRENT_TIMESTAMP follows the server's time zone.
+			'created_at' => gmdate( 'Y-m-d H:i:s' ),
 		);
-		$format = array( '%d', '%d', '%s', '%d', '%s' );
+		$format = array( '%d', '%d', '%s', '%d', '%s', '%s' );
 		if ( null !== $expires_at ) {
 			$row['expires_at'] = $expires_at;
 			$format[]          = '%s';
