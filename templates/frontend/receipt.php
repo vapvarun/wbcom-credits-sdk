@@ -9,12 +9,12 @@
  * @package Wbcom\Credits
  * @since   1.9.0
  *
- * @var array<string, mixed> $receipt Receipt::data().
+ * @var array<string, mixed> $args Template args: `receipt` is Receipt::data().
  */
 
 defined( 'ABSPATH' ) || exit;
 
-$wbcom_r = $receipt;
+$wbcom_r = (array) ( $args['receipt'] ?? array() );
 ?>
 <!doctype html>
 <html <?php language_attributes(); ?>>
