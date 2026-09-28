@@ -2,6 +2,12 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.5] - September 2026
+
+### Fixed
+
+- **A pending checkout can no longer be missed by the reconcile sweep because a shared index lost its row.** Every pending checkout is its own option, but `put()` also recorded it in one shared index option with a read-modify-write, and the hourly `Reconciler`, `for_user()` and `coupon_holds()` all enumerated checkouts through that index. Two buyers starting a checkout in the same instant could drop one row: if that buyer's webhook was then missed and they never returned, the sweep that exists to rescue the payment could not see it, and a coupon hold went uncounted. Entries are now found by option name (prefix plus the 32-character md5, oldest first, bounded by `LIMIT`), so nothing has to be recorded when an entry is written and `put()` no longer reads or writes a shared option. The pre-1.9.5 `index` option is deleted the first time a `put()` runs. The documented "losing an index row only drives cleanup" no longer applies to anything.
+
 ## [1.9.4] - September 2026
 
 ### Fixed

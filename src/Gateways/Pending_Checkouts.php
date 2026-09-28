@@ -55,6 +55,14 @@ final class Pending_Checkouts {
 	private const SWEEP_BATCH = 50;
 
 	/**
+	 * Most entries one enumeration (for_user, coupon_holds) reads per slug. Entries
+	 * live for days and leave when credited, so this is far above a real backlog.
+	 *
+	 * @var int
+	 */
+	private const SCAN_MAX = 1000;
+
+	/**
 	 * Option name prefix for one slug's entries.
 	 *
 	 * @param string $slug Plugin slug.
@@ -121,9 +129,8 @@ final class Pending_Checkouts {
 	public static function coupon_holds( string $slug, string $code, int $since ): int {
 		$now   = time();
 		$count = 0;
-		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
-		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
-			$entry = get_option( (string) $key, null );
+		foreach ( self::keys( $slug, self::SCAN_MAX ) as $key ) {
+			$entry = get_option( $key, null );
 			if ( ! is_array( $entry ) || (int) ( $entry['expires_at'] ?? 0 ) < $now ) {
 				continue;
 			}
@@ -172,7 +179,7 @@ final class Pending_Checkouts {
 		);
 		self::$staged_order = null;
 
-		self::sweep_expired( $slug, $key, $expires_at );
+		self::sweep_expired( $slug );
 	}
 
 	/**
@@ -217,14 +224,14 @@ final class Pending_Checkouts {
 	 * @return array<int, array{session_id: string, gateway: string}>
 	 */
 	public static function oldest( string $slug, int $limit ): array {
-		$now   = time();
-		$out   = array();
-		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
-		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
+		$now = time();
+		$out = array();
+		// Expired entries the sweep has not reached yet take up slots, so read a little past $limit.
+		foreach ( self::keys( $slug, $limit + self::SWEEP_BATCH ) as $key ) {
 			if ( count( $out ) >= $limit ) {
 				break;
 			}
-			$entry = get_option( (string) $key, null );
+			$entry = get_option( $key, null );
 			if ( ! is_array( $entry ) || (int) ( $entry['expires_at'] ?? 0 ) < $now || '' === (string) ( $entry['session_id'] ?? '' ) ) {
 				continue;
 			}
@@ -260,14 +267,9 @@ final class Pending_Checkouts {
 		$now  = time();
 		$rows = array();
 
-		// The index lists every live entry's key; it is the enumeration
-		// source, not the expiry source of truth — an entry's own
-		// expires_at (same field get() checks) decides staleness, since
-		// the two can disagree (e.g. a test, or a future caller, pokes the
-		// entry directly).
-		$index = get_option( self::entry_prefix( $slug ) . 'index', array() );
-		foreach ( ( is_array( $index ) ? $index : array() ) as $key => $_unused_index_expiry ) {
-			$entry = get_option( (string) $key, null );
+		// An entry's own expires_at (the field get() checks) decides staleness.
+		foreach ( self::keys( $slug, self::SCAN_MAX ) as $key ) {
+			$entry = get_option( $key, null );
 			if ( ! is_array( $entry ) || (int) ( $entry['user_id'] ?? 0 ) !== $user_id ) {
 				continue;
 			}
@@ -351,43 +353,60 @@ final class Pending_Checkouts {
 	}
 
 	/**
+	 * Option names of a slug's pending entries, oldest first.
+	 *
+	 * Every entry is its own option, so the option table is the list: nothing has
+	 * to be recorded anywhere when an entry is written, and two checkouts started
+	 * in the same instant cannot lose each other's record (the shared index this
+	 * replaces was a read-modify-write, and the hourly reconcile sweep reads it).
+	 * The name is the prefix plus a 32-character md5, so matching on length also
+	 * skips the pre-1.9.5 `index` option and another slug that shares this prefix.
+	 * Served by the unique option_name index and bounded by LIMIT.
+	 *
+	 * @since 1.9.5
+	 *
+	 * @param string $slug  Plugin slug.
+	 * @param int    $limit Most names to return.
+	 * @return string[]
+	 */
+	private static function keys( string $slug, int $limit ): array {
+		global $wpdb;
+
+		$prefix = self::entry_prefix( $slug );
+		$names  = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s AND LENGTH(option_name) = %d ORDER BY option_id ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- core table name.
+				$wpdb->esc_like( $prefix ) . '%',
+				strlen( $prefix ) + 32,
+				max( 1, $limit )
+			)
+		);
+
+		return is_array( $names ) ? array_map( 'strval', $names ) : array();
+	}
+
+	/**
 	 * Delete a bounded batch of expired entries.
 	 *
-	 * A buyer who never returns leaves an entry behind. The entries' keys and
-	 * expiry times are listed in one small index option; each put() records its
-	 * entry there and deletes up to SWEEP_BATCH expired ones. The index is the
-	 * only read-modify-write left, and it only drives cleanup: losing an index
-	 * row to a race leaves one abandoned option behind, it can never lose a live
-	 * checkout, which is read by its own key.
+	 * A buyer who never returns leaves an entry behind. Each put() looks at the
+	 * oldest SWEEP_BATCH entries (the ones most likely to have expired) and
+	 * deletes those that are gone or past their expiry. It also removes the
+	 * shared index option older versions kept.
 	 *
-	 * @param string $slug      Plugin slug.
-	 * @param string $key       Entry option just written ('' for none).
-	 * @param int    $expires_at Its expiry.
+	 * @param string $slug Plugin slug.
 	 * @return void
 	 */
-	private static function sweep_expired( string $slug, string $key = '', int $expires_at = 0 ): void {
-		$index_key = self::entry_prefix( $slug ) . 'index';
-		$index     = get_option( $index_key, array() );
-		$index     = is_array( $index ) ? $index : array();
+	private static function sweep_expired( string $slug ): void {
+		// Pre-1.9.5 index. Its entries are found by name now; drop it once seen.
+		delete_option( self::entry_prefix( $slug ) . 'index' );
 
-		$now     = time();
-		$checked = 0;
-		foreach ( $index as $entry_key => $entry_expires ) {
-			if ( $checked >= self::SWEEP_BATCH ) {
-				break;
-			}
-			++$checked;
-			if ( (int) $entry_expires < $now || ! is_array( get_option( (string) $entry_key, null ) ) ) {
-				delete_option( (string) $entry_key );
-				unset( $index[ $entry_key ] );
+		$now = time();
+		foreach ( self::keys( $slug, self::SWEEP_BATCH ) as $key ) {
+			$entry = get_option( $key, null );
+			if ( ! is_array( $entry ) || (int) ( $entry['expires_at'] ?? 0 ) < $now ) {
+				delete_option( $key );
 			}
 		}
-
-		if ( '' !== $key ) {
-			$index[ $key ] = $expires_at;
-		}
-
-		update_option( $index_key, $index, false );
 	}
 
 	/**
@@ -397,12 +416,10 @@ final class Pending_Checkouts {
 	 * @return void
 	 */
 	public static function reset_for_tests( string $slug ): void {
-		$index_key = self::entry_prefix( $slug ) . 'index';
-		$index     = get_option( $index_key, array() );
-		foreach ( array_keys( is_array( $index ) ? $index : array() ) as $entry_key ) {
-			delete_option( (string) $entry_key );
+		foreach ( self::keys( $slug, 100000 ) as $key ) {
+			delete_option( $key );
 		}
-		delete_option( $index_key );
+		delete_option( self::entry_prefix( $slug ) . 'index' );
 		delete_option( self::legacy_key( $slug ) );
 	}
 }
