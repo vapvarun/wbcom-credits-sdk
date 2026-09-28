@@ -23,10 +23,10 @@ v1.9.2, v1.9.3, v1.9.4 (1.7.1 and 1.7.2 were folded into 1.8.0 and never tagged)
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
 | WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.4* | `Credits_Bridge::sdk_money_ready()` |
-| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 | `wb_listora_credits_ready()` |
+| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 (branch `1.9.0`; `main` 1.7.1), no `.bundled-from` | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.0 development build (branch `1.8.0`); re-bundle the tag | `JobCharge::consumer()` gates on `Registry::consumer()` |
-| WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | `plugins_loaded` (10) | 1.7.0 | none — legacy API only |
+| WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | **never** (Credits feature removed in PR #117; nothing includes the loader) | 1.7.0, unused | — |
 
 \* WB Ad Manager Pro 3.2.0 is frozen at 1.9.4 (RELEASE-POLICY.md). Adoption
 for every other consumer is tracked in the Bugs column of the Basecamp project
