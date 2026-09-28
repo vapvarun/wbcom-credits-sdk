@@ -769,6 +769,8 @@ Multiple plugins can bundle different SDK versions. Only the highest version ini
 3. All plugins share the same `Registry` singleton
 4. Safe to bundle alongside other Wbcom plugins that also use the SDK
 
+**When to bump a bundle:** only to a tagged release, once per product release, frozen before that product's QA round. See [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md).
+
 ---
 
 ## Use Cases
