@@ -92,6 +92,42 @@ final class FakeWpdb {
 	/** Statements run through get_var(), for assertions. @var array<int,string> */
 	public array $reads = array();
 
+	/**
+	 * The options table name, for queries built from $wpdb->options.
+	 *
+	 * @var string
+	 */
+	public string $options = 'wp_options';
+
+	public function esc_like( string $text ): string {
+		return addcslashes( $text, '_%\\' );
+	}
+
+	/**
+	 * Pending_Checkouts::keys(): option names by prefix and length, oldest first.
+	 * "Oldest" is insertion order, which is what option_id ascending means.
+	 *
+	 * @return string[]
+	 */
+	public function get_col( string $sql ): array {
+		if ( ! preg_match( "/FROM\s+\S+\s+WHERE\s+option_name\s+LIKE\s+'(.*)'\s+AND\s+LENGTH\(option_name\)\s*=\s*(\d+)\s+ORDER BY option_id ASC\s+LIMIT\s+(\d+)/is", $sql, $m ) ) {
+			return array();
+		}
+		global $wbcom_credits_test_options;
+		$prefix = str_replace( '\\', '', rtrim( stripslashes( $m[1] ), '%' ) );
+		$out    = array();
+		foreach ( array_keys( (array) $wbcom_credits_test_options ) as $name ) {
+			$name = (string) $name;
+			if ( str_starts_with( $name, $prefix ) && strlen( $name ) === (int) $m[2] ) {
+				$out[] = $name;
+			}
+			if ( count( $out ) >= (int) $m[3] ) {
+				break;
+			}
+		}
+		return $out;
+	}
+
 	public function get_charset_collate(): string {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
