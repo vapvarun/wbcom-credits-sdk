@@ -60,6 +60,14 @@ final class GatewaySettingsTest extends TestCase {
 		$this->assertSame( $saved, get_option( 'wbcom_credits_gateway_settings_' . self::SLUG ) );
 	}
 
+	public function test_a_select_stores_only_one_of_its_options(): void {
+		$ok  = Gateway_Settings::save( self::SLUG, array( 'fakepay' => array( 'mode' => 'test' ) ) );
+		$bad = Gateway_Settings::save( self::SLUG, array( 'fakepay' => array( 'mode' => 'sandbox' ) ) );
+
+		$this->assertSame( 'test', $ok['fakepay']['mode'] );
+		$this->assertSame( '', $bad['fakepay']['mode'] );
+	}
+
 	public function test_blank_password_keeps_the_stored_secret(): void {
 		Gateway_Settings::save( self::SLUG, array( 'fakepay' => array( 'secret' => 'sk_keep' ) ) );
 		$saved = Gateway_Settings::save( self::SLUG, array( 'fakepay' => array( 'secret' => '  ', 'public_key' => 'pk_2' ) ) );

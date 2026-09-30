@@ -39,7 +39,10 @@ After 2.0.0 the SDK:
 5. Returns **codes and data**: every `WP_Error` has a stable, documented code.
    Its message is short developer English, meant for logs, never for a buyer.
 
-`bin/audit.sh` gets a check for 1-4 so a regression fails CI.
+2.0.0 adds a `bin/audit.sh` check for 1-4, so a regression fails CI. It cannot
+run before then: the deprecated UI still ships in 1.10.x and would fail it.
+Rule 5 is already enforced: `tests/Gateways/ErrorCodesDocTest.php` fails when
+`src/` returns a code missing from `docs/ERROR-CODES.md`.
 
 ## Inventory: what moves where
 

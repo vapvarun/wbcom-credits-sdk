@@ -612,3 +612,26 @@ if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
 if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );
 }
+
+// Receipt helpers (1.10.0 Receipt::can_view() tests).
+if ( ! function_exists( 'user_can' ) ) {
+	function user_can( int $user_id, string $cap ): bool {
+		global $wbcom_credits_test_admins;
+		return 'manage_options' === $cap && in_array( $user_id, (array) $wbcom_credits_test_admins, true );
+	}
+}
+if ( ! function_exists( 'mysql2date' ) ) {
+	function mysql2date( $format, $date ): string {
+		return (string) $date;
+	}
+}
+if ( ! function_exists( 'get_bloginfo' ) ) {
+	function get_bloginfo( string $show = '' ): string {
+		return 'Test Site';
+	}
+}
+if ( ! function_exists( 'number_format_i18n' ) ) {
+	function number_format_i18n( $number, int $decimals = 0 ): string {
+		return number_format( (float) $number, $decimals );
+	}
+}

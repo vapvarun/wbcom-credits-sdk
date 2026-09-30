@@ -13,7 +13,9 @@ The SDK becomes headless: it renders nothing, and each consumer owns its credit 
 - **`Countries::codes()` / `display_name()` and `Currencies::codes()` / `display_name()`**: names from PHP intl (CLDR), already correct in every language; the code is returned when intl is missing.
 - **`Receipt::can_view()`** and the **`wbcom_credits_receipt_url`** filter, so a consumer serves receipts from its own page.
 - **`wbcom_credits_purchase_unavailable`** action, fired where the WooCommerce, PMPro and MemberPress adapters block a credit purchase, for the consumer's own notice.
-- **[docs/ERROR-CODES.md](docs/ERROR-CODES.md)**: every REST and webhook error code. Consumers show their own text per code.
+- **[docs/ERROR-CODES.md](docs/ERROR-CODES.md)**: every REST and webhook error code, including the eight `Pricing` codes the checkout route returns. Consumers show their own text per code. `ErrorCodesDocTest` fails when `src/` returns a code the doc does not list.
+- **`Gateway_Settings::save()` stores a select value only when it is one of the field's options**, so a tampered form cannot store an unknown mode.
+- Tests for `Receipt::can_view()` (buyer, other user, admin, guest, unknown slug or row) and the `wbcom_credits_receipt_url` filter.
 
 ### Deprecated (removed in 2.0.0)
 
