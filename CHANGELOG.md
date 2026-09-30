@@ -2,6 +2,28 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - September 2026
+
+The SDK becomes headless: it renders nothing, and each consumer owns its credit screens and wording in its own text domain. This release **adds** the data-only API; nothing is removed, and nothing a consumer that has not migrated can see changes. The UI goes in 2.0.0. See [docs/HEADLESS-PLAN.md](docs/HEADLESS-PLAN.md).
+
+### Added
+
+- **`Gateways\Gateway_Settings`**: gateway settings as data. `views()` returns each gateway's label-free fields, stored values (secrets masked, with a `saved` flag) and webhook URL; `save()` sanitizes and stores posted values after the consumer's own nonce and capability check; `fields()`, `saved()`, `option_name()`, `webhook_url()`, `sanitize_value()`. `Admin_Form_Renderer` now uses its helpers, so there is one set of sanitizing rules.
+- **`Billing::schema()`**: billing fields without labels.
+- **`Countries::codes()` / `display_name()` and `Currencies::codes()` / `display_name()`**: names from PHP intl (CLDR), already correct in every language; the code is returned when intl is missing.
+- **`Receipt::can_view()`** and the **`wbcom_credits_receipt_url`** filter, so a consumer serves receipts from its own page.
+- **`wbcom_credits_purchase_unavailable`** action, fired where the WooCommerce, PMPro and MemberPress adapters block a credit purchase, for the consumer's own notice.
+- **[docs/ERROR-CODES.md](docs/ERROR-CODES.md)**: every REST and webhook error code. Consumers show their own text per code.
+
+### Deprecated (removed in 2.0.0)
+
+- `Pack_Admin_Renderer::render()`, `Checkout_Settings::render()`, `Coupons::render()`.
+- `Admin_Form_Renderer` (`render`, `render_field`, `handle_save`, `get_gateway_views`, `sanitize_for_settings_api`) and `templates/admin/gateways-section.php`.
+- `Receipt::maybe_render()`, its `template_redirect` route and `templates/frontend/receipt.php`.
+- The `wbcom-credits-checkout` script (`assets/js/checkout.js`).
+- `Template::get()`.
+- The `label` key of `Billing::fields()`, `Countries::all()` / `label()` and `Currencies::all()` / `name()` as display text.
+
 ## [1.9.5] - September 2026
 
 ### Fixed

@@ -39,6 +39,8 @@ final class Template {
 	 * @param array<string, mixed> $args        Variables exposed to the template as $args.
 	 * @param string               $plugin_slug Consuming plugin slug for plugin-specific theme overrides.
 	 * @return void
+	 *
+	 * @deprecated 1.10.0 The SDK ships no templates from 2.0.0; consumers render their own. Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function get( string $name, array $args = array(), string $plugin_slug = '' ): void {
 		$located = self::locate( $name, $plugin_slug );

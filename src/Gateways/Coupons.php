@@ -183,6 +183,8 @@ final class Coupons {
 	 * @since 1.9.0
 	 * @param string $slug Plugin slug.
 	 * @return void
+	 *
+	 * @deprecated 1.10.0 Render the coupon editor in the consumer; keep all() / sanitize(). Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function render( string $slug ): void {
 		$name = self::option_name( $slug );

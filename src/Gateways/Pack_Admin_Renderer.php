@@ -63,6 +63,8 @@ final class Pack_Admin_Renderer {
 	 *                                              number of blank pack rows appended
 	 *                                              after existing packs (default 3).
 	 * @return void
+	 *
+	 * @deprecated 1.10.0 Render the pack editor in the consumer; keep calling sanitize(). Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function render( string $option_name, array $args = array() ): void {
 		$saved = get_option( $option_name, array() );

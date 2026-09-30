@@ -54,6 +54,8 @@ final class Admin_Form_Renderer {
 	 * @param string                       $slug Consuming plugin slug.
 	 * @param array{as_form?: bool}|array  $args Optional. Render args. Defaults to standalone form mode.
 	 * @return void
+	 *
+	 * @deprecated 1.10.0 Use Gateway_Settings::views() and render the form in the consumer. Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function render( string $slug, array $args = array() ): void {
 		$as_form = ! isset( $args['as_form'] ) || (bool) $args['as_form'];
@@ -127,6 +129,8 @@ final class Admin_Form_Renderer {
 	 *
 	 * @param mixed $input Raw POSTed value (typically array keyed by gateway id).
 	 * @return array Sanitized settings array ready to persist.
+	 *
+	 * @deprecated 1.10.0 Call Gateway_Settings::save() from the consumer's own save handler. Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function sanitize_for_settings_api( $input ): array {
 		// Resolve the slug from the option name in the current request.
@@ -219,6 +223,8 @@ final class Admin_Form_Renderer {
 	 *
 	 * @param string $slug Consuming plugin slug.
 	 * @return bool True on save, false on early-bail (auth/nonce failure or wrong slug).
+	 *
+	 * @deprecated 1.10.0 Check the nonce and capability in the consumer, then call Gateway_Settings::save(). Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function handle_save( string $slug ): bool {
 		// Wrong slug — POST is for a different plugin's form.
@@ -302,6 +308,8 @@ final class Admin_Form_Renderer {
 	 *
 	 * @param string $slug Consuming plugin slug.
 	 * @return array<int, array<string, mixed>> List of { id, label, available, fields, values, webhook_url }.
+	 *
+	 * @deprecated 1.10.0 Use Gateway_Settings::views() (label-free fields, masked secrets). Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function get_gateway_views( string $slug ): array {
 		$gateways = Gateway_Registry::for_slug( $slug )->get_all();
@@ -340,6 +348,8 @@ final class Admin_Form_Renderer {
 	 * @param mixed  $value      Currently-saved value for the field.
 	 * @param string $gateway_id Owning gateway id (for input name + id).
 	 * @return void Echoes the `<tr>...</tr>`.
+	 *
+	 * @deprecated 1.10.0 Use Gateway_Settings::views() and render the field in the consumer. Removed in 2.0.0. See docs/HEADLESS-PLAN.md.
 	 */
 	public static function render_field( array $field, $value, string $gateway_id ): void {
 		$key = (string) ( $field['key'] ?? '' );
@@ -422,7 +432,7 @@ final class Admin_Form_Renderer {
 	 * @return string Absolute webhook URL operators paste into the provider dashboard.
 	 */
 	public static function webhook_url( string $slug, string $gateway_id ): string {
-		return rest_url( sprintf( 'wbcom-credits/v1/%s/webhook/%s', $slug, $gateway_id ) );
+		return Gateway_Settings::webhook_url( $slug, $gateway_id );
 	}
 
 	/**
@@ -434,8 +444,7 @@ final class Admin_Form_Renderer {
 	 * @return array<string, array<string, mixed>> Settings keyed by gateway id.
 	 */
 	public static function get_saved_settings( string $slug ): array {
-		$value = get_option( 'wbcom_credits_gateway_settings_' . $slug, array() );
-		return is_array( $value ) ? $value : array();
+		return Gateway_Settings::saved( $slug );
 	}
 
 	/**
@@ -452,25 +461,7 @@ final class Admin_Form_Renderer {
 	 * @return mixed Sanitized value.
 	 */
 	private static function sanitize_field( string $type, $raw, $existing ) {
-		switch ( $type ) {
-			case 'bool':
-				return ! empty( $raw );
-
-			case 'password':
-				$value = is_string( $raw ) ? trim( $raw ) : '';
-				// Blank input → preserve existing (so users don't have to re-paste keys).
-				return '' === $value ? (string) $existing : $value;
-
-			case 'url':
-				return is_string( $raw ) ? esc_url_raw( $raw ) : '';
-
-			case 'select':
-				return is_string( $raw ) ? sanitize_key( $raw ) : '';
-
-			case 'text':
-			default:
-				return is_string( $raw ) ? sanitize_text_field( $raw ) : '';
-		}
+		return Gateway_Settings::sanitize_value( $type, $raw, $existing );
 	}
 
 	/**

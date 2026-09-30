@@ -33,6 +33,9 @@ final class Billing {
 	/**
 	 * Field definitions for a slug, keyed by user meta key.
 	 *
+	 * @deprecated 1.10.0 The `label` key goes in 2.0.0; use schema() and label
+	 *             the fields in the consumer's own text domain.
+	 *
 	 * @since 1.9.0
 	 * @param string $slug Plugin slug.
 	 * @return array<string, array{label: string, required: bool, type: string, autocomplete: string}>
@@ -68,6 +71,24 @@ final class Billing {
 		 * @param string $slug   Plugin slug.
 		 */
 		return (array) apply_filters( 'wbcom_credits_billing_fields', $fields, $slug );
+	}
+
+	/**
+	 * The billing fields a slug asks for, without display text: `required`,
+	 * `type` and `autocomplete`, keyed by user meta key. The consumer labels
+	 * them in its own text domain.
+	 *
+	 * @since 1.10.0
+	 * @param string $slug Plugin slug.
+	 * @return array<string, array{required: bool, type: string, autocomplete: string}>
+	 */
+	public static function schema( string $slug ): array {
+		$out = array();
+		foreach ( self::fields( $slug ) as $key => $field ) {
+			unset( $field['label'] );
+			$out[ $key ] = $field;
+		}
+		return $out;
 	}
 
 	/**
