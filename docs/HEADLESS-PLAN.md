@@ -73,8 +73,12 @@ that still calls it. Removal therefore comes last.
 - `Gateway_Settings::views()` / `save()` (row 4), label-free field schemas
   (rows 5 and 9) returned **alongside** the old labelled ones, `Receipt::can_view()`,
   intl-backed `Countries::name()` / `Currencies::name()`, the
-  `wbcom_credits_purchase_unavailable` action, `docs/ERROR-CODES.md`, and
-  adapters that write `reason` and `reference` with an empty `note`.
+  `wbcom_credits_purchase_unavailable` action (fired **next to** the existing
+  notices), and `docs/ERROR-CODES.md`.
+- Behaviour a non-migrated consumer can see does **not** change in 1.10.0:
+  adapters still write their English `note` alongside `reason` + `reference`,
+  error messages keep their text, and notices still print. The newest copy
+  serves every plugin on a site, so any such change waits for 2.0.0.
 - Every UI method gets a `@deprecated 1.10.0` docblock that points to its
   replacement. No runtime `_deprecated_function()` yet: it would print
   notices on sites whose other plugins have not migrated.
@@ -86,7 +90,8 @@ Checklists below. Each migration is its own card in that product's board.
 
 ### 2.0.0: remove (only when every row in the table below says "released")
 - Delete rows 1-14's surfaces, `templates/`, `assets/`, the text domain and
-  the labelled field schemas.
+  the labelled field schemas. Adapters stop writing `note`; error messages
+  become untranslated developer English; storefront notices stop printing.
 - Keep the old class names as thin stubs for one major. Render methods do
   nothing and call `_doing_it_wrong()`, so a site still running an old
   consumer loses a form instead of white-screening.
