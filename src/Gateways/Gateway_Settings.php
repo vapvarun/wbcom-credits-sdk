@@ -108,7 +108,8 @@ final class Gateway_Settings {
 	 *
 	 * The caller checks the capability and nonce first; this only handles
 	 * data. A blank password keeps the stored secret, so re-saving the form
-	 * never wipes a key. Gateways missing from `$input` keep their values.
+	 * never wipes a key; a select keeps only one of its declared options.
+	 * Gateways missing from `$input` keep their values.
 	 *
 	 * @since 1.10.0
 	 * @param string                              $slug  Consuming plugin slug.
@@ -127,8 +128,13 @@ final class Gateway_Settings {
 			$old = (array) ( $existing[ $id ] ?? array() );
 			$new = array();
 			foreach ( self::fields( $gateway ) as $field ) {
-				$key         = $field['key'];
-				$new[ $key ] = self::sanitize_value( $field['type'], $input[ $id ][ $key ] ?? null, $old[ $key ] ?? '' );
+				$key   = $field['key'];
+				$value = self::sanitize_value( $field['type'], $input[ $id ][ $key ] ?? null, $old[ $key ] ?? '' );
+				// A select only ever stores one of its own options.
+				if ( 'select' === $field['type'] && array() !== $field['options'] && ! in_array( $value, $field['options'], true ) ) {
+					$value = '';
+				}
+				$new[ $key ] = $value;
 			}
 			$updated[ $id ] = $new;
 		}

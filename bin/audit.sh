@@ -8,7 +8,7 @@
 #
 # What this catches:
 #   - PHP syntax errors (php -l) across every file in src/.
-#   - PHPUnit suite — currently 48 tests / 97 assertions.
+#   - PHPUnit suite (every test under the phpunit.xml.dist test suites).
 #   - composer.json validity.
 #   - Class loader coherence: every entry in $wbcom_credits_sdk_classes maps
 #     to a real file on disk. A typo in the map shows up here, not at

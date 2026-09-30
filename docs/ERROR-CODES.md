@@ -11,6 +11,9 @@ introduces it. See [HEADLESS-PLAN.md](HEADLESS-PLAN.md).
 
 Always keep a generic fallback message for a code you do not recognise.
 
+**Keeping this list complete:** `tests/Gateways/ErrorCodesDocTest.php` fails when
+`src/` returns a code (a `WP_Error` or a `PricingException`) that is not in this file.
+
 ## Checkout: `POST wbcom-credits/v1/{slug}/checkout/{gateway}`
 
 | Code | Status | Means | Suggested wording |
@@ -25,6 +28,17 @@ Always keep a generic fallback message for a code you do not recognise.
 | `coupon_busy` | 409 | Another checkout holds the coupon's last redemption. Retry. | Someone else is using this coupon. Please try again. |
 | `topup_failed` | 500 | A free (100%-off) checkout could not credit the balance. | Could not add the credits. Please try again. |
 | `gateway_error` | 502 | The provider refused to open a checkout session. | The payment could not be started. Please try again. |
+| `unknown_pack` | 404 | The `pack_id` is not one of the slug's packs (removed, or a stale page). | That credit pack is no longer available. Please refresh. |
+| `missing_input` | 400 | Neither `pack_id` nor `credits` was sent. | Select a credit pack or enter a custom amount. |
+| `credits_out_of_bounds` | 400 | A custom amount is outside the slug's minimum and maximum. | Enter a number of credits within the allowed range. |
+| `plugin_not_registered` | 404 | The slug is not registered with the SDK. A consumer set-up fault. | Generic fallback. |
+| `pricing_not_configured` | 503 | The slug registered no pricing. A consumer set-up fault. | Generic fallback. |
+| `callback_not_configured` | 503 | A custom amount was sent but the slug has no price callback. | Generic fallback. |
+| `invalid_pack` | 500 | A stored pack has non-positive credits or price. A data fault. | Generic fallback. |
+| `invalid_callback_result` | 500 | The slug's price callback returned a non-positive price. | Generic fallback. |
+
+The last eight come from `Gateways\Pricing` (a `PricingException`, returned
+on the checkout route as a `WP_Error` with the exception's code and status).
 
 ## Claim after return: `POST wbcom-credits/v1/{slug}/claim/{gateway}`
 
