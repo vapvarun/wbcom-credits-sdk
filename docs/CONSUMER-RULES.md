@@ -78,6 +78,17 @@ For the how-to (bundle, register, take money in, charge, refund, report), see
 - Update the consumer's row in CONSUMERS.md in the same PR that bumps the SDK.
 - Bundle only tagged releases, once per product release, and freeze the version before the product's QA round. See [RELEASE-POLICY.md](RELEASE-POLICY.md).
 
+## 8. The SDK renders nothing (owner rule, 2026-09-30)
+- Every screen, form, template, script, notice and user-visible sentence
+  about credits belongs to your plugin, in your plugin's text domain. The SDK
+  gives you data, `sanitize()` / `save()` calls, REST routes and error codes.
+- Do not call an SDK `render*()` method, SDK template or `checkout.js` in new
+  code. They are deprecated from 1.10.0 and removed in 2.0.0.
+- Never show an SDK `WP_Error` message to a user. Map its `code`
+  ([ERROR-CODES.md](ERROR-CODES.md), from 1.10.0) to your own string.
+- Never add UI to the SDK. A surface you need is built in your plugin.
+- Plan, inventory and per-consumer checklists: [HEADLESS-PLAN.md](HEADLESS-PLAN.md).
+
 ## Checklist for a PR that touches credits
 - [ ] No edit under `libs/wbcom-credits-sdk/` except a full re-bundle.
 - [ ] No new `Ledger::insert` / `Ledger::table_name` / raw ledger SQL.

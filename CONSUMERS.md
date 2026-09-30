@@ -18,6 +18,15 @@ why bundles should still be kept current rather than left to the election.
 Last audited: 2026-09-27, against 1.9.4. Tags: v1.8.0, v1.8.1, v1.9.0, v1.9.1,
 v1.9.2, v1.9.3, v1.9.4 (1.7.1 and 1.7.2 were folded into 1.8.0 and never tagged).
 
+## Headless from 1.10.0
+
+Owner rule, 2026-09-30: **the SDK renders nothing.** Every consumer takes over
+the credit screens, templates, scripts and wording it shows, in its own text
+domain, and the SDK's UI is removed in 2.0.0 once every consumer has shipped
+the change. What each consumer has to do, and the release order that keeps
+mixed-version sites from fataling:
+[docs/HEADLESS-PLAN.md](docs/HEADLESS-PLAN.md).
+
 ## Consumers
 
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
