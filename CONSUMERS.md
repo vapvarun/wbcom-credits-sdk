@@ -32,7 +32,7 @@ mixed-version sites from fataling:
 | Plugin | Repo | Bundle path | Loads its copy | Bundled | Guard |
 |---|---|---|---|---|---|
 | WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.4* | `Credits_Bridge::sdk_money_ready()` |
-| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 (branch `1.9.0`; `main` 1.7.1), no `.bundled-from` | `wb_listora_credits_ready()` |
+| WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.9.5 (branch `1.9.0`, bundled 2026-09-29; `main` still 1.7.1) | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
 | WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.10.0 (branch `1.8.0`, bundled 2026-09-30; headless reference consumer) | `JobCharge::consumer()` gates on `Registry::consumer()` |
 | WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | **never** (Credits feature removed in PR #117; nothing includes the loader) | 1.7.0, unused | — |
@@ -47,13 +47,22 @@ WP Sell Services (free + pro), Woo Sell Services, Jetonomy, Learnomy.
 
 **Everyone moves to the latest tag on their next release; WB Ad Manager
 Pro goes first.** Never ship a 1.9.0-1.9.2 bundle: next to an older copy
-that loads first (WB Listora 1.7.2, alphabetically earlier) it fatals the
-site. 1.9.3 fixes that. WB Listora, WP Career Board Pro and WPConnectPress are
-now filed as Bugs on the Wbcom Credits SDK board. Their bundles
-lack the 1.9.x integrity fixes: holds settled by id, balance checks under a
-lock, claims and credits in one transaction, events after commit, atomic
-refunds and coupon limits. What each must change is in the CHANGELOG
-(1.9.0 "Changed", 1.9.2 "Changed"); the rest is additive.
+that loads first it fatals the site. 1.9.3 fixes that. WB Listora and
+WP Career Board Pro have both since adopted 1.9.5. WPConnectPress is still
+filed as Bugs on the Wbcom Credits SDK board (its bundle is unused, per the
+Consumers table above - remove it or re-adopt). What each must change is in
+the CHANGELOG (1.9.0 "Changed", 1.9.2 "Changed"); the rest is additive.
+
+WB Listora's adoption (card "Adopt SDK 1.9.4: WB Listora + Pro") did the
+bundle bump, guard verification and one concrete correctness fix from the
+card's findings: Pro's admin-refund REST handler now releases its
+`Processed_Events` claim via the SDK's `release()` when the ledger write
+fails, instead of leaving an unrecoverable "already refunded" claim behind.
+The remaining findings on that card (own MySQL lock vs `with_user_lock()`,
+raw ledger SQL vs the 1.9.x read API, listener signatures taking the ledger
+id as an argument instead of looking it up) are still open - they're
+dedup/cleanup, not bugs, and were left as documented debt rather than risking
+an un-reviewed rewrite of working money-movement code in the same pass.
 
 **Before re-vendoring:** hook `wbcom_credits_checkout_enabled` to the
 plugin's own "credits are sold here" switch. It gates the gateway checkout
