@@ -34,7 +34,7 @@ mixed-version sites from fataling:
 | WB Ad Manager Pro | `vapvarun/wb-ad-manager-pro` | `libs/` | plugin-file include | 1.9.4* | `Credits_Bridge::sdk_money_ready()` |
 | WB Listora (free) | `wbcomdesigns/wb-listora` | `libs/` | plugin-file include | 1.7.2 (branch `1.9.0`; `main` 1.7.1), no `.bundled-from` | `wb_listora_credits_ready()` |
 | WB Listora Pro | `wbcomdesigns/wb-listora-pro` | — consumes Free's copy | — | — | `wb_listora_credits_ready()` |
-| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.9.5 (branch `1.8.0`, bundled 2026-09-29) | `JobCharge::consumer()` gates on `Registry::consumer()` |
+| WP Career Board Pro | `vapvarun/wp-career-board-pro` | `libs/` | plugin-file include | 1.10.0 (branch `1.8.0`, bundled 2026-09-30; headless reference consumer) | `JobCharge::consumer()` gates on `Registry::consumer()` |
 | WPConnectPress | `vapvarun/WPConnectPress` | `libs/` | **never** (Credits feature removed in PR #117; nothing includes the loader) | 1.7.0, unused | — |
 
 \* WB Ad Manager Pro 3.2.0 is frozen at 1.9.4 (RELEASE-POLICY.md). Adoption

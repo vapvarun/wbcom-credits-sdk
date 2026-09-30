@@ -104,7 +104,7 @@ Checklists below. Each migration is its own card in that product's board.
 
 | Consumer | 1.10 bundled | Migrated | Released |
 |---|---|---|---|
-| WP Career Board Pro | | | |
+| WP Career Board Pro | yes | yes (reference) | |
 | WB Listora | | | |
 | WB Listora Pro | (uses Free's copy) | | |
 | WB Ad Manager Pro | | | |
