@@ -101,6 +101,18 @@ final class WooCommerceAdapter implements AdapterInterface {
 	public function print_unavailable_notice(): void {
 		global $product;
 		if ( $this->is_blocked( $product ) ) {
+			/**
+			 * A credit product was blocked because this slug's credit sales are
+			 * off. Consumers show their own notice here; the SDK's printed notice
+			 * goes in 2.0.0.
+			 *
+			 * @since 1.10.0
+			 *
+			 * @param string $slug    Plugin slug.
+			 * @param string $context 'woocommerce', 'pmpro' or 'memberpress'.
+			 * @param mixed  $item    The product, level or MemberPress product.
+			 */
+			do_action( 'wbcom_credits_purchase_unavailable', $this->slug, 'woocommerce', $product );
 			echo '<p class="wbcom-credits-unavailable">' . esc_html__( 'Credit purchases are not available on this site right now.', 'wbcom-credits-sdk' ) . '</p>';
 		}
 	}

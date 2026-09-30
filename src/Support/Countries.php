@@ -295,7 +295,44 @@ final class Countries {
 	}
 
 	/**
+	 * Every supported country code, uppercase ISO 3166-1 alpha-2.
+	 *
+	 * @since 1.10.0
+	 * @return list<string>
+	 */
+	public static function codes(): array {
+		return array_map( 'strval', array_keys( self::all() ) );
+	}
+
+	/**
+	 * A country's name in the given locale, from PHP intl (CLDR data, so
+	 * every language already has it and there is nothing to translate).
+	 * Falls back to the code when intl is missing or does not know it.
+	 *
+	 * @since 1.10.0
+	 * @param string $code   ISO code (any case).
+	 * @param string $locale WordPress locale, e.g. de_DE. Defaults to the current one.
+	 * @return string
+	 */
+	public static function display_name( string $code, string $locale = '' ): string {
+		$code = strtoupper( trim( $code ) );
+		if ( '' === $code || ! class_exists( '\\Locale' ) ) {
+			return $code;
+		}
+		if ( '' === $locale ) {
+			$locale = function_exists( 'determine_locale' ) ? determine_locale() : 'en_US';
+		}
+		$name = \Locale::getDisplayRegion( 'und-' . $code, $locale );
+		// intl answers an unknown code with its own "Unknown Region" label.
+		$unknown = \Locale::getDisplayRegion( 'und-ZZ', $locale );
+
+		return ( is_string( $name ) && '' !== $name && $name !== $unknown && strtoupper( $name ) !== $code ) ? $name : $code;
+	}
+
+	/**
 	 * Display label for a stored country code.
+	 *
+	 * @deprecated 1.10.0 Use display_name(); the translated list goes in 2.0.0.
 	 *
 	 * @param string $code Stored ISO code (any case).
 	 * @return string Translated label, or the normalised code itself when unknown.

@@ -45,13 +45,47 @@ final class Receipt {
 	 * @return string
 	 */
 	public static function url( string $slug, int $log_id ): string {
-		return add_query_arg(
+		$url = add_query_arg(
 			array(
 				self::VAR => $log_id,
 				'slug'    => $slug,
 			),
 			home_url( '/' )
 		);
+
+		/**
+		 * Point receipt links at the consumer's own receipt page.
+		 *
+		 * @since 1.10.0
+		 *
+		 * @param string $url    SDK default (served by maybe_render(), deprecated).
+		 * @param string $slug   Plugin slug.
+		 * @param int    $log_id Transaction log row id.
+		 */
+		return (string) apply_filters( 'wbcom_credits_receipt_url', $url, $slug, $log_id );
+	}
+
+	/**
+	 * The receipt a user may see, or null. The buyer sees their own; a user
+	 * who can manage options sees any. Use it to guard the consumer's own
+	 * receipt page.
+	 *
+	 * @since 1.10.0
+	 * @param int    $user_id User asking.
+	 * @param string $slug    Plugin slug.
+	 * @param int    $log_id  Transaction log row id.
+	 * @return array<string, mixed>|null Receipt data, as data() returns it.
+	 */
+	public static function can_view( int $user_id, string $slug, int $log_id ): ?array {
+		if ( $user_id <= 0 || null === Registry::instance()->get( $slug ) ) {
+			return null;
+		}
+		$data = self::data( $slug, $log_id );
+		if ( null === $data ) {
+			return null;
+		}
+
+		return ( (int) $data['user_id'] === $user_id || user_can( $user_id, 'manage_options' ) ) ? $data : null;
 	}
 
 	/**
@@ -113,6 +147,11 @@ final class Receipt {
 	/**
 	 * `template_redirect`: serve the printable receipt to its buyer or an admin.
 	 *
+	 * @deprecated 1.10.0 Serve the receipt from the consumer: guard with
+	 *             can_view(), render data() in its own template, and point
+	 *             links there with the `wbcom_credits_receipt_url` filter.
+	 *             This route and templates/frontend/receipt.php go in 2.0.0.
+	 *
 	 * @since 1.9.0
 	 * @return void
 	 */
@@ -129,8 +168,8 @@ final class Receipt {
 			auth_redirect();
 		}
 
-		$data = null === Registry::instance()->get( $slug ) ? null : self::data( $slug, $log_id );
-		if ( null === $data || ( $data['user_id'] !== get_current_user_id() && ! current_user_can( 'manage_options' ) ) ) {
+		$data = self::can_view( get_current_user_id(), $slug, $log_id );
+		if ( null === $data ) {
 			wp_die( esc_html__( 'Receipt not found.', 'wbcom-credits-sdk' ), '', array( 'response' => 404 ) );
 		}
 

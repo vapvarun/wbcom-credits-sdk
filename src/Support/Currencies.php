@@ -808,7 +808,43 @@ final class Currencies {
 	}
 
 	/**
+	 * Every supported currency code, uppercase ISO 4217.
+	 *
+	 * @since 1.10.0
+	 * @return list<string>
+	 */
+	public static function codes(): array {
+		return array_map( 'strval', array_keys( self::registry() ) );
+	}
+
+	/**
+	 * A currency's name in the given locale, from PHP intl's CLDR data.
+	 * Falls back to the code when intl is missing or does not know it.
+	 *
+	 * @since 1.10.0
+	 * @param string $code   ISO 4217 code.
+	 * @param string $locale WordPress locale, e.g. de_DE. Defaults to the current one.
+	 * @return string
+	 */
+	public static function display_name( string $code, string $locale = '' ): string {
+		$code = strtoupper( trim( $code ) );
+		if ( '' === $code || ! class_exists( '\\ResourceBundle' ) ) {
+			return $code;
+		}
+		if ( '' === $locale ) {
+			$locale = function_exists( 'determine_locale' ) ? determine_locale() : 'en_US';
+		}
+		$bundle = \ResourceBundle::create( $locale, 'ICUDATA-curr' );
+		$entry  = $bundle instanceof \ResourceBundle ? $bundle['Currencies'][ $code ] ?? null : null;
+		$name   = $entry instanceof \ResourceBundle ? $entry[1] : null;
+
+		return is_string( $name ) && '' !== $name ? $name : $code;
+	}
+
+	/**
 	 * Display name for a currency code (falls back to the code).
+	 *
+	 * @deprecated 1.10.0 Use display_name(); the English names go in 2.0.0.
 	 *
 	 * @param string $code ISO 4217 code.
 	 * @return string

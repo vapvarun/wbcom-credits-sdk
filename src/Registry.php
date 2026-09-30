@@ -241,6 +241,9 @@ final class Registry {
 	 * against another `wbcom-credits-checkout` registration elsewhere).
 	 *
 	 * @since 1.3.2
+	 * @deprecated 1.10.0 Consumers ship their own checkout script against the
+	 *             REST routes. The `wbcom-credits-checkout` handle and
+	 *             assets/js/checkout.js are removed in 2.0.0.
 	 * @return void
 	 */
 	private static function register_checkout_script(): void {
