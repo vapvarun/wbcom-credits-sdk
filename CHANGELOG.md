@@ -2,6 +2,12 @@
 
 All notable changes to the Wbcom Credits SDK are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the SDK follows [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] - October 2026
+
+### Fixed
+
+- **A consumer item can be paid for by an account other than its author.** `Consumer` charged, settled, released and repriced every item against `post_author`, so where several accounts manage one item (co-owners of a job), one account's action spent another's balance, and the "not enough credits" check read the wrong balance. `reserve_item()` and `reprice_item()` take an optional `$payer` (0 keeps today's behaviour: the author pays). The record keeps the payer, and `settle_item()`, `release_item()` and later reprices act on that account, so a refund goes back to whoever paid. When `reprice_item()` is called by another account, the item changes hands: the new payer is charged the full current cost and the previous payer is repaid what they paid. Both ledgers are locked, the lower user ID first. Records paid by their author are unchanged on disk, and `record()` adds a `payer` key only when it is not the author. `set_state()` keeps a recorded payer.
+
 ## [1.10.0] - September 2026
 
 The SDK becomes headless: it renders nothing, and each consumer owns its credit screens and wording in its own text domain. This release **adds** the data-only API; nothing is removed, and nothing a consumer that has not migrated can see changes. The UI goes in 2.0.0. See [docs/HEADLESS-PLAN.md](docs/HEADLESS-PLAN.md).

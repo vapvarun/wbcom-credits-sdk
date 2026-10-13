@@ -136,21 +136,24 @@ final class Consumer {
 	 *
 	 * @since 1.9.0
 	 *
+	 * @since 1.10.1 `$payer`.
+	 *
 	 * @param int $item_id Post/item ID.
-	 * @return bool True when the item is paid for (held now or before, settled, or free); false when the author can't afford it.
+	 * @param int $payer   Account that pays; 0 for the item's author.
+	 * @return bool True when the item is paid for (held now or before, settled, or free); false when the payer can't afford it.
 	 */
-	public function reserve_item( int $item_id ): bool {
+	public function reserve_item( int $item_id, int $payer = 0 ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
 		}
 
-		$user_id = (int) $post->post_author;
+		$user_id = $payer > 0 ? $payer : (int) $post->post_author;
 
 		return (bool) Credits::with_user_lock(
 			$this->slug,
 			$user_id,
-			function () use ( $item_id, $user_id ): bool {
+			function () use ( $item_id, $user_id, $post ): bool {
 				// Held or settled already: a second hold event (a resubmission,
 				// a retried request) must not reserve again.
 				if ( in_array( $this->record( $item_id )['state'], array( 'held', 'settled' ), true ) ) {
@@ -161,7 +164,7 @@ final class Consumer {
 				// later reprices from 0 and charges the full difference.
 				$cost = max( 0, $this->resolve_cost( $item_id ) );
 				if ( 0 === $this->units( $cost ) ) {
-					$this->set_state( $item_id, 'held', 0 );
+					$this->store( $item_id, 'held', 0, $user_id, $post );
 					return true;
 				}
 
@@ -172,7 +175,7 @@ final class Consumer {
 				if ( ! $this->reserve( $user_id, $cost, $item_id, $this->config['label'] . ' — credits held' ) ) {
 					return false;
 				}
-				$this->set_state( $item_id, 'held', $cost );
+				$this->store( $item_id, 'held', $cost, $user_id, $post );
 				return true;
 			}
 		);
@@ -192,8 +195,8 @@ final class Consumer {
 			return false;
 		}
 
-		$user_id = (int) $post->post_author;
 		$record  = $this->record( $item_id );
+		$user_id = $this->payer( $record, $post );
 
 		// Recorded items settle only an open hold, for the amount held. A
 		// republish of a settled item (renewal, reactivation) or an item
@@ -201,7 +204,7 @@ final class Consumer {
 		if ( '' !== $record['state'] ) {
 			if ( 'held' === $record['state'] ) {
 				$this->settle_holds( $user_id, $item_id, $this->config['label'] . ' — credits deducted' );
-				$this->set_state( $item_id, 'settled', $record['cost'] );
+				$this->store( $item_id, 'settled', $record['cost'], $user_id, $post );
 				return true;
 			}
 			return 'settled' === $record['state'];
@@ -214,7 +217,7 @@ final class Consumer {
 	}
 
 	/**
-	 * Release the item's open hold back to its author.
+	 * Release the item's open hold back to the account that paid it.
 	 *
 	 * @since 1.9.0
 	 *
@@ -227,8 +230,8 @@ final class Consumer {
 			return false;
 		}
 
-		$user_id = (int) $post->post_author;
 		$record  = $this->record( $item_id );
+		$user_id = $this->payer( $record, $post );
 
 		// Recorded items release only an open hold. Deactivating or trashing
 		// an item whose credits were already settled used to refund them,
@@ -237,7 +240,7 @@ final class Consumer {
 		if ( '' !== $record['state'] ) {
 			if ( 'held' === $record['state'] ) {
 				$released = $this->release_holds( $user_id, $item_id, $this->config['label'] . ' — credits refunded' );
-				$this->set_state( $item_id, 'released', $record['cost'] );
+				$this->store( $item_id, 'released', $record['cost'], $user_id, $post );
 				return $released > 0;
 			}
 			return false;
@@ -254,26 +257,40 @@ final class Consumer {
 	 * handed back. Items with nothing charged are left alone; their next
 	 * reserve prices them fresh.
 	 *
+	 * When `$payer` is another account than the one that paid, the item
+	 * changes hands: the new payer is charged the full current cost and the
+	 * previous payer gets back what they paid. One account pays for an
+	 * item, so a later refund has one place to go.
+	 *
 	 * @since 1.9.0
+	 * @since 1.10.1 `$payer`.
 	 *
 	 * @param int $item_id Post/item ID.
-	 * @return bool False only when the author can't afford a price rise.
+	 * @param int $payer   Account making the change; 0 for whoever paid.
+	 * @return bool False only when the payer can't afford a price rise.
 	 */
-	public function reprice_item( int $item_id ): bool {
+	public function reprice_item( int $item_id, int $payer = 0 ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
 		}
 
-		$user_id = (int) $post->post_author;
+		$paid_by = $this->payer( $this->record( $item_id ), $post );
+		$user_id = $payer > 0 ? $payer : $paid_by;
+		if ( $user_id !== $paid_by ) {
+			return $this->change_payer( $item_id, $paid_by, $user_id );
+		}
 
 		return (bool) Credits::with_user_lock(
 			$this->slug,
 			$user_id,
-			function () use ( $item_id, $user_id ): bool {
+			function () use ( $item_id, $user_id, $post ): bool {
 				$record = $this->record( $item_id );
 				if ( ! in_array( $record['state'], array( 'held', 'settled' ), true ) ) {
 					return true;
+				}
+				if ( $this->payer( $record, $post ) !== $user_id ) {
+					return false; // Changed hands while we waited for the lock: report it, the user retries.
 				}
 
 				$cost  = max( 0, $this->resolve_cost( $item_id ) );
@@ -307,10 +324,83 @@ final class Consumer {
 					$this->give_back( $user_id, -$delta, $item_id, $label . ' — price change refunded' );
 				}
 
-				$this->set_state( $item_id, $record['state'], $cost );
+				$this->store( $item_id, $record['state'], $cost, $user_id, $post );
 				return true;
 			}
 		);
+	}
+
+	/**
+	 * Hand a held or settled item to another payer at its current cost.
+	 *
+	 * Both ledgers are locked, lower user ID first so two hand-overs the
+	 * other way round can't deadlock. The new payer is charged before the
+	 * old one is paid back, so a short balance changes nothing.
+	 *
+	 * @since 1.10.1
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @param int $from    Account that paid.
+	 * @param int $to      Account taking it over.
+	 * @return bool False when `$to` can't afford it.
+	 */
+	private function change_payer( int $item_id, int $from, int $to ): bool {
+		$work = function () use ( $item_id, $from, $to ): bool {
+			$record = $this->record( $item_id );
+			if ( ! in_array( $record['state'], array( 'held', 'settled' ), true ) ) {
+				return true;
+			}
+			if ( $this->payer( $record, get_post( $item_id ) ) !== $from ) {
+				return false; // Changed hands while we waited for the lock: report it, the user retries.
+			}
+
+			$label = $this->config['label'];
+			$cost  = max( 0, $this->resolve_cost( $item_id ) );
+			if ( $this->units( $cost ) > 0 ) {
+				if ( $this->units( $this->current_balance( $to ) ) < $this->units( $cost ) ) {
+					return false;
+				}
+				if ( ! $this->reserve( $to, $cost, $item_id, $label . ' — credits held' ) ) {
+					return false;
+				}
+				if ( 'settled' === $record['state'] ) {
+					$this->settle_holds( $to, $item_id, $label . ' — credits deducted' );
+				}
+			}
+
+			if ( 'held' === $record['state'] ) {
+				$this->release_holds( $from, $item_id, $label . ' — credits refunded' );
+			} elseif ( $this->units( $record['cost'] ) > 0 ) {
+				$this->give_back( $from, $record['cost'], $item_id, $label . ' — credits refunded' );
+			}
+
+			$this->store( $item_id, $record['state'], $cost, $to, get_post( $item_id ) );
+			return true;
+		};
+
+		$first  = min( $from, $to );
+		$second = max( $from, $to );
+		return (bool) Credits::with_user_lock(
+			$this->slug,
+			$first,
+			fn () => Credits::with_user_lock( $this->slug, $second, $work )
+		);
+	}
+
+	/**
+	 * The account an item's charges belong to: the recorded payer, else the
+	 * author (items recorded before 1.10.1, and every item a consumer never
+	 * passed a payer for).
+	 *
+	 * @since 1.10.1
+	 *
+	 * @param array{state: string, cost: int|float, payer?: int} $record Item record.
+	 * @param \WP_Post|null                                     $post   Item.
+	 * @return int
+	 */
+	private function payer( array $record, $post ): int {
+		$payer = (int) ( $record['payer'] ?? 0 );
+		return $payer > 0 ? $payer : ( $post instanceof \WP_Post ? (int) $post->post_author : 0 );
 	}
 
 	/**
@@ -322,14 +412,19 @@ final class Consumer {
 	 * @since 1.9.0 Public.
 	 *
 	 * @param int $item_id Post/item ID.
-	 * @return array{state: string, cost: int|float} Cost in resolve_cost() units: credits, or money (may have decimals) on a money consumer.
+	 * @since 1.10.1 `payer`: the account charged, present only when it is not the author.
+	 * @return array{state: string, cost: int|float, payer?: int} Cost in resolve_cost() units: credits, or money (may have decimals) on a money consumer.
 	 */
 	public function record( int $item_id ): array {
-		$raw = get_post_meta( $item_id, $this->meta_key(), true );
-		return array(
+		$raw    = get_post_meta( $item_id, $this->meta_key(), true );
+		$record = array(
 			'state' => is_array( $raw ) ? (string) ( $raw['state'] ?? '' ) : '',
 			'cost'  => $this->normalise( is_array( $raw ) ? ( $raw['cost'] ?? 0 ) : 0 ),
 		);
+		if ( is_array( $raw ) && (int) ( $raw['payer'] ?? 0 ) > 0 ) {
+			$record['payer'] = (int) $raw['payer'];
+		}
+		return $record;
 	}
 
 	/**
@@ -346,7 +441,29 @@ final class Consumer {
 	 * @return void
 	 */
 	public function set_state( int $item_id, string $state, int|float $cost ): void {
-		update_post_meta( $item_id, $this->meta_key(), array( 'state' => $state, 'cost' => $this->normalise( $cost ) ) );
+		$record = $this->record( $item_id ); // Keeps the payer (1.10.1).
+		update_post_meta( $item_id, $this->meta_key(), array( 'state' => $state, 'cost' => $this->normalise( $cost ) ) + array_intersect_key( $record, array( 'payer' => 0 ) ) );
+	}
+
+	/**
+	 * Record an item's state and who paid, the payer kept only when it is
+	 * not the author, so items paid by their author look as they always did.
+	 *
+	 * @since 1.10.1
+	 *
+	 * @param int           $item_id Post/item ID.
+	 * @param string        $state   held | settled | released.
+	 * @param int|float     $cost    Amount held.
+	 * @param int           $payer   Account charged.
+	 * @param \WP_Post|null $post    Item.
+	 * @return void
+	 */
+	private function store( int $item_id, string $state, int|float $cost, int $payer, $post ): void {
+		$record = array( 'state' => $state, 'cost' => $this->normalise( $cost ) );
+		if ( $post instanceof \WP_Post && $payer > 0 && $payer !== (int) $post->post_author ) {
+			$record['payer'] = $payer;
+		}
+		update_post_meta( $item_id, $this->meta_key(), $record );
 	}
 
 	/**
@@ -420,7 +537,7 @@ final class Consumer {
 	}
 
 	/**
-	 * Release every open hold on the item back to its author.
+	 * Release every open hold on the item back to the account that placed it.
 	 *
 	 * @since 1.9.0
 	 *
