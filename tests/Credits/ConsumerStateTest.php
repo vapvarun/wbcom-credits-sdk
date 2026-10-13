@@ -361,6 +361,22 @@ namespace Wbcom\Credits\Tests\Credits {
 			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
 		}
 
+		public function test_item_operations_lock_the_item_before_the_ledger(): void {
+			global $wpdb;
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$wpdb->locks_taken = array();
+
+			$this->consumer()->reserve_item( self::ITEM, self::OTHER );
+
+			// Two accounts reserving one item take different ledger locks; the
+			// shared item lock is what serializes them, so it must come first.
+			$this->assertGreaterThanOrEqual( 2, count( $wpdb->locks_taken ) );
+			$this->assertNotSame( $wpdb->locks_taken[0], $wpdb->locks_taken[1], 'Item lock, then the payer\'s ledger lock.' );
+			$wpdb->locks_taken = array();
+			$this->consumer()->reserve_item( self::ITEM + 1, self::USER );
+			$this->assertNotSame( $wpdb->locks_taken[0], $wpdb->locks_taken[1] );
+		}
+
 		public function test_set_state_keeps_the_payer(): void {
 			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
 			$c = $this->consumer();

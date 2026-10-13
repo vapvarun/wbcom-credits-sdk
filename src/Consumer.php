@@ -143,6 +143,17 @@ final class Consumer {
 	 * @return bool True when the item is paid for (held now or before, settled, or free); false when the payer can't afford it.
 	 */
 	public function reserve_item( int $item_id, int $payer = 0 ): bool {
+		return (bool) $this->with_item_lock( $item_id, fn (): bool => $this->reserve_item_unlocked( $item_id, $payer ) );
+	}
+
+	/**
+	 * reserve_item() under the item lock.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @param int $payer   Account that pays; 0 for the default.
+	 * @return bool
+	 */
+	private function reserve_item_unlocked( int $item_id, int $payer = 0 ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
@@ -190,6 +201,16 @@ final class Consumer {
 	 * @return bool True when the item is settled (now or before); false when there was no open hold to settle.
 	 */
 	public function settle_item( int $item_id ): bool {
+		return (bool) $this->with_item_lock( $item_id, fn (): bool => $this->settle_item_unlocked( $item_id ) );
+	}
+
+	/**
+	 * settle_item() under the item lock.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool
+	 */
+	private function settle_item_unlocked( int $item_id ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
@@ -225,6 +246,16 @@ final class Consumer {
 	 * @return bool True when a hold was released now.
 	 */
 	public function release_item( int $item_id ): bool {
+		return (bool) $this->with_item_lock( $item_id, fn (): bool => $this->release_item_unlocked( $item_id ) );
+	}
+
+	/**
+	 * release_item() under the item lock.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @return bool
+	 */
+	private function release_item_unlocked( int $item_id ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
@@ -270,6 +301,17 @@ final class Consumer {
 	 * @return bool False only when the payer can't afford a price rise.
 	 */
 	public function reprice_item( int $item_id, int $payer = 0 ): bool {
+		return (bool) $this->with_item_lock( $item_id, fn (): bool => $this->reprice_item_unlocked( $item_id, $payer ) );
+	}
+
+	/**
+	 * reprice_item() under the item lock.
+	 *
+	 * @param int $item_id Post/item ID.
+	 * @param int $payer   Account that pays; 0 for the default.
+	 * @return bool
+	 */
+	private function reprice_item_unlocked( int $item_id, int $payer = 0 ): bool {
 		$post = get_post( $item_id );
 		if ( ! $post instanceof \WP_Post ) {
 			return false;
@@ -290,7 +332,7 @@ final class Consumer {
 					return true;
 				}
 				if ( $this->payer( $record, $post ) !== $user_id ) {
-					return false; // Changed hands while we waited for the lock: report it, the user retries.
+					return false; // Unreachable under the item lock; kept as a guard.
 				}
 
 				$cost  = max( 0, $this->resolve_cost( $item_id ) );
@@ -351,7 +393,7 @@ final class Consumer {
 				return true;
 			}
 			if ( $this->payer( $record, get_post( $item_id ) ) !== $from ) {
-				return false; // Changed hands while we waited for the lock: report it, the user retries.
+				return false; // Unreachable under the item lock; kept as a guard.
 			}
 
 			$label = $this->config['label'];
@@ -385,6 +427,22 @@ final class Consumer {
 			$first,
 			fn () => Credits::with_user_lock( $this->slug, $second, $work )
 		);
+	}
+
+	/**
+	 * Run a callback holding this item's lock, so two accounts acting on one
+	 * item (co-owners) are served one at a time. Take it before any user
+	 * lock: every item operation locks the item first, then the ledger(s).
+	 * Re-entrant.
+	 *
+	 * @since 1.10.1
+	 *
+	 * @param int      $item_id Post/item ID.
+	 * @param callable $fn      Work; its return value is passed back.
+	 * @return mixed The callback's result, or false when the lock timed out.
+	 */
+	public function with_item_lock( int $item_id, callable $fn ): mixed {
+		return Ledger::with_lock( 'consumer|' . $this->slug . '|' . $this->config['id'] . '|' . $item_id, $fn );
 	}
 
 	/**
