@@ -274,6 +274,118 @@ namespace Wbcom\Credits\Tests\Credits {
 
 			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::USER ), 'Charged the 10.00 held, once.' );
 		}
+		/** A second account that runs the item with its author (a co-owner). */
+		private const OTHER = 99;
+
+		public function test_a_payer_other_than_the_author_is_charged_and_refunded(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$c = $this->consumer();
+
+			$this->assertTrue( $c->reserve_item( self::ITEM, self::OTHER ) );
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::OTHER ), 'The payer is charged.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ), 'The author is not.' );
+			$this->assertSame( array( 'state' => 'held', 'cost' => 10, 'payer' => self::OTHER ), $c->record( self::ITEM ) );
+
+			$c->release_item( self::ITEM );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::OTHER ), 'Released back to the payer.' );
+		}
+
+		public function test_a_payer_other_than_the_author_settles_their_own_hold(): void {
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$c = $this->consumer();
+
+			$c->reserve_item( self::ITEM, self::OTHER );
+			$this->assertTrue( $c->settle_item( self::ITEM ) );
+			$this->assertSame( array(), Ledger::open_holds( 'cst', self::OTHER, self::ITEM ), 'The payer\'s hold is settled.' );
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::OTHER ) );
+		}
+
+		public function test_reprice_by_another_account_charges_them_and_repays_the_author(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			self::$price = 0;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+			$c->settle_item( self::ITEM ); // The author published it free.
+
+			self::$price = 10;
+			$this->assertFalse( $c->reprice_item( self::ITEM, self::OTHER ), 'The other account has nothing.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ), 'A refused move never spends the author\'s credits.' );
+			$this->assertSame( array( 'state' => 'settled', 'cost' => 0 ), $c->record( self::ITEM ), 'Nothing changed.' );
+
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$this->assertTrue( $c->reprice_item( self::ITEM, self::OTHER ) );
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::OTHER ) );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+
+			self::$price = 0;
+			$this->assertTrue( $c->reprice_item( self::ITEM, self::OTHER ) );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::OTHER ), 'Moving it back refunds the account that paid.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
+
+		public function test_a_paid_item_changing_hands_repays_the_previous_payer_in_full(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			self::$price = 10;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM );
+			$c->settle_item( self::ITEM );
+
+			self::$price = 12;
+			$this->assertTrue( $c->reprice_item( self::ITEM, self::OTHER ) );
+			$this->assertSame( 18.0, Credits::balance_money( self::SLUG, self::OTHER ), 'The new payer pays the full 12.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ), 'The author gets their 10 back.' );
+
+			// The author takes it back at a lower price: the other account is repaid.
+			self::$price = 5;
+			$this->assertTrue( $c->reprice_item( self::ITEM, self::USER ) );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::OTHER ) );
+			$this->assertSame( 25.0, Credits::balance_money( self::SLUG, self::USER ) );
+			$this->assertSame( array( 'state' => 'settled', 'cost' => 5 ), $c->record( self::ITEM ), 'Back with the author: no payer key.' );
+		}
+
+		public function test_a_held_item_changing_hands_moves_the_hold(): void {
+			Credits::topup_money( self::SLUG, self::USER, 30.0, '', 'seed' );
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			self::$price = 10;
+			$c = $this->priced();
+			$c->reserve_item( self::ITEM ); // Pending review.
+
+			$this->assertTrue( $c->reprice_item( self::ITEM, self::OTHER ) );
+			$this->assertSame( array(), Ledger::open_holds( 'cst', self::USER, self::ITEM ), 'The author\'s hold is released.' );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+
+			$c->settle_item( self::ITEM ); // Approved.
+			$this->assertSame( 20.0, Credits::balance_money( self::SLUG, self::OTHER ) );
+			$this->assertSame( 30.0, Credits::balance_money( self::SLUG, self::USER ) );
+		}
+
+		public function test_item_operations_lock_the_item_before_the_ledger(): void {
+			global $wpdb;
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$wpdb->locks_taken = array();
+
+			$this->consumer()->reserve_item( self::ITEM, self::OTHER );
+
+			// Two accounts reserving one item take different ledger locks; the
+			// shared item lock is what serializes them, so it must come first.
+			$this->assertGreaterThanOrEqual( 2, count( $wpdb->locks_taken ) );
+			$this->assertNotSame( $wpdb->locks_taken[0], $wpdb->locks_taken[1], 'Item lock, then the payer\'s ledger lock.' );
+			$wpdb->locks_taken = array();
+			$this->consumer()->reserve_item( self::ITEM + 1, self::USER );
+			$this->assertNotSame( $wpdb->locks_taken[0], $wpdb->locks_taken[1] );
+		}
+
+		public function test_set_state_keeps_the_payer(): void {
+			Credits::topup_money( self::SLUG, self::OTHER, 30.0, '', 'seed' );
+			$c = $this->consumer();
+			$c->reserve_item( self::ITEM, self::OTHER );
+
+			$c->set_state( self::ITEM, 'held', 10 );
+			$this->assertSame( self::OTHER, $c->record( self::ITEM )['payer'] ?? 0 );
+		}
+
 		public function test_a_money_cost_keeps_its_cents(): void {
 			Credits::topup_money( self::SLUG, self::USER, 10.0, '', 'seed' );
 			$c = new Consumer( self::SLUG, 'cst', array( 'id' => 'listing', 'label' => 'Listing', 'cost' => 2.5 ) );
